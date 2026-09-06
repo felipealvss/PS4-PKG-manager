@@ -63,6 +63,11 @@ baixa os mesmos catálogos e trabalha em cima deles. Não precisa extrair o
 
 ## Biblioteca unificada
 
+As tabelas da **Fila** e da **Biblioteca** são ordenáveis por qualquer coluna:
+clicar no cabeçalho alterna crescente, decrescente e de volta à ordem natural
+(a ordem de execução, no caso da fila). Colunas numéricas começam do maior para
+o menor, e a escolha persiste entre sessões. As três listas paginam de 8 em 8.
+
 A aba Biblioteca traz duas listas empilhadas: os arquivos **no PC** e **o que já
 está instalado no console**. A busca no topo filtra as duas simultaneamente, cada
 uma pagina de 8 em 8 e o cabeçalho mostra a contagem com o tamanho total — a aba
