@@ -10,6 +10,8 @@ import json
 import re
 import threading
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from .config import STATE_DIR, ConfigError, settings, validate_remote_path
@@ -240,6 +242,112 @@ def transfer(local_path, destination=None, on_progress=None, cancel=None,
 
 # alias historico
 upload = transfer
+
+
+# ---------- instalador remoto do console (Remote Package Installer) ----------
+#
+# O console baixa o pacote direto do nosso servidor e instala, sem passar por
+# /data/pkg. Isso dispensa a copia intermediaria: um jogo de 44 GB deixa de
+# exigir 88 GB livres no console.
+#
+# Duas descobertas ao mapear a API, ambas obrigatorias para funcionar:
+#   1. as respostas trazem numeros em hexadecimal (0x1CC), o que nao e JSON
+#      valido -- json.loads() sozinho falha;
+#   2. o cliente HTTP do console decodifica a URL e nao a recodifica ao
+#      requisitar, entao nome de arquivo com espaco ou colchete quebra com
+#      "Unable to set up prerequisites". As URLs precisam ser ASCII simples.
+
+RPI_PORT = 12800
+_HEXNUM = re.compile(rb'(:\s*)0x([0-9A-Fa-f]+)')
+
+
+def _rpi_json(raw: bytes):
+    """A API devolve 0x1CC onde JSON exige decimal."""
+    fixed = _HEXNUM.sub(lambda m: m.group(1) + str(int(m.group(2), 16)).encode(), raw)
+    return json.loads(fixed.decode("utf-8", "replace"))
+
+
+def _rpi_post(path, payload, timeout=25):
+    url = f"http://{settings['ps4_host']}:{RPI_PORT}{path}"
+    body = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return _rpi_json(r.read())
+    except urllib.error.HTTPError as e:
+        try:
+            return _rpi_json(e.read())
+        except Exception:
+            raise IOError(f"instalador remoto respondeu HTTP {e.code}")
+
+
+_rpi_cache = {"t": 0.0, "val": None, "key": None}
+_rpi_lock = threading.Lock()
+
+
+def rpi_available(timeout=3, max_age=0):
+    """(disponivel, detalhe). Nao instala nada -- so bate na porta.
+
+    Quando o Package Installer sai de foco no console a porta continua aceitando
+    TCP mas nao responde, e cada checagem custa o timeout inteiro. max_age
+    reaproveita a ultima resposta; o preflight chama sem cache.
+    """
+    key = settings["ps4_host"]
+    if max_age:
+        with _rpi_lock:
+            c = _rpi_cache
+            if c["key"] == key and c["val"] and time.time() - c["t"] < max_age:
+                return c["val"]
+    try:
+        d = _rpi_post("/api/is_exists", {"title_id": "CUSA00000"}, timeout=timeout)
+        res = (d.get("status") == "success", "instalador remoto respondendo")
+    except Exception as e:
+        res = (False, "o Package Installer nao esta respondendo "
+                      f"({type(e).__name__}) - deixe o app aberto no console")
+    with _rpi_lock:
+        _rpi_cache.update(t=time.time(), val=res, key=key)
+    return res
+
+
+def rpi_is_installed(title_id, timeout=10):
+    try:
+        d = _rpi_post("/api/is_exists", {"title_id": title_id}, timeout=timeout)
+        return str(d.get("exists")).lower() == "true", int(d.get("size") or 0)
+    except Exception:
+        return False, 0
+
+
+def rpi_install(urls, timeout=40):
+    """Manda o console baixar e instalar. Devolve {task_id, title}."""
+    d = _rpi_post("/api/install", {"type": "direct", "packages": list(urls)},
+                  timeout=timeout)
+    if d.get("status") != "success":
+        raise IOError(d.get("error") or "o instalador remoto recusou o pacote")
+    return {"task_id": d.get("task_id"), "title": d.get("title") or ""}
+
+
+def rpi_progress(task_id, timeout=15):
+    """Progresso da tarefa, normalizado."""
+    d = _rpi_post("/api/get_task_progress", {"task_id": int(task_id)}, timeout=timeout)
+    if d.get("status") != "success" or "error_code" in d:
+        code = d.get("error_code")
+        raise IOError(f"tarefa {task_id} sem progresso"
+                      + (f" (codigo {code:#x})" if isinstance(code, int) else ""))
+    total = int(d.get("length_total") or 0)
+    sent = int(d.get("transferred_total") or 0)
+    return {
+        "size": total,
+        "transferred": sent,
+        "percent": round(sent * 100.0 / total, 2) if total else 0.0,
+        "preparing": int(d.get("preparing_percent") or 0),
+        "installing": int(d.get("local_copy_percent") or 0),
+        "rest_sec": int(d.get("rest_sec_total") or 0),
+        "error": int(d.get("error") or 0),
+        # transferido por inteiro e copia local concluida
+        "done": bool(total and sent >= total and int(d.get("local_copy_percent") or 0) >= 100),
+    }
 
 
 # ---------- o que ja esta instalado no console (somente leitura) ----------

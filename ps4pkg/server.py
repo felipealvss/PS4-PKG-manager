@@ -199,6 +199,9 @@ def origin_label(host):
         return "desconhecida"
     if host == "local":
         return "local / USB"
+    # instalacao direta a partir deste programa
+    if host.split(":")[0] == lan_ip() or host.startswith("127.0.0.1"):
+        return "este PC"
     low = host.lower()
     for needle, label in ORIGIN_LABELS:
         if needle in low:
@@ -245,6 +248,30 @@ def installed_view():
         })
     out.sort(key=lambda x: (-x["size"], x["name"].lower()))
     return out
+
+
+# O cliente HTTP do console decodifica a URL e nao a recodifica ao requisitar:
+# um nome como "Nidhogg - [US] [EN] [1.02].pkg" faz a instalacao falhar com
+# "Unable to set up prerequisites". Por isso os pacotes tambem sao servidos sob
+# um apelido ASCII simples, usado apenas nas URLs entregues ao console.
+_ALIAS_BAD = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def pkg_alias(filename):
+    """Apelido seguro e estavel para um arquivo da biblioteca."""
+    stem = Path(filename).stem
+    safe = _ALIAS_BAD.sub("-", stem).strip("-. ") or "pkg"
+    digest = hashlib.sha1(filename.encode()).hexdigest()[:8]
+    return f"{digest}-{safe[:60]}.pkg"
+
+
+def resolve_alias(alias):
+    """Apelido -> arquivo real na pasta de destino, ou None."""
+    alias = Path(alias).name
+    for f in library():
+        if pkg_alias(f["filename"]) == alias:
+            return settings.dest / f["filename"]
+    return None
 
 
 def app_icon_path(title_id):
@@ -339,6 +366,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_cover(q)
             if p == "/api/preflight":
                 return self._api_preflight()
+            if p == "/api/rpi":
+                ok, detail = ps4.rpi_available(max_age=20)
+                return self._json({"available": ok, "detail": detail,
+                                   "port": ps4.RPI_PORT})
             if p == "/api/installed":
                 try:
                     return self._json({"titles": installed_view()})
@@ -363,6 +394,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(local_fpkgi_catalog(kind))
             if p.startswith("/files/"):
                 return self._serve_pkg(urllib.parse.unquote(p[7:]))
+            if p.startswith("/pkg/"):
+                real = resolve_alias(urllib.parse.unquote(p[5:]))
+                if real is None:
+                    return self._send(404, b"nao encontrado", "text/plain")
+                return self._serve_pkg(real.name)
             return self._json({"error": "not found"}, 404)
         except BrokenPipeError:
             pass
@@ -408,6 +444,9 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     ok = manager.move(jid, -1 if act == "up" else 1)
                 return self._json({"ok": ok})
+            if p == "/api/library/install":
+                job, new = manager.add_install(b["filename"])
+                return self._json({"ok": True, "id": job["id"], "new": new})
             if p in ("/api/library/transfer", "/api/library/push"):
                 job, new = manager.add_transfer(
                     b["filename"],
@@ -566,14 +605,26 @@ class Handler(BaseHTTPRequestHandler):
                      "o catálogo local e a instalação pela LAN não funcionam.",
             critical=False)
 
-        # 8. capas
+        # 8. instalador remoto
+        if online:
+            ok, detail = ps4.rpi_available()
+            add("rpi", "Instalador remoto do console", ok,
+                f"porta {ps4.RPI_PORT} - {detail}",
+                "" if ok else "Abra o Package Installer no console (Remote Package "
+                              "Install). Sem ele, use Transferir na aba Biblioteca.",
+                critical=False)
+        else:
+            add("rpi", "Instalador remoto do console", None,
+                "nao da pra checar com o console offline", critical=False)
+
+        # 9. capas
         add("ffmpeg", "ffmpeg (miniaturas das capas)", HAVE_FFMPEG,
             "presente — capas reduzidas de ~440 KB para ~38 KB" if HAVE_FFMPEG
             else "ausente — as capas vêm em tamanho original e a grade fica lenta",
             "" if HAVE_FFMPEG else "Opcional. Instale com: sudo dnf install ffmpeg",
             critical=False)
 
-        # 9. downloads pela metade
+        # 10. downloads pela metade
         pr = partials()
         if pr:
             add("partials", "Downloads incompletos", None,

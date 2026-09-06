@@ -10,7 +10,7 @@ from .config import STATE_DIR, settings
 from .engine import Cancelled, Download, filename_for
 
 JOBS_FILE = STATE_DIR / "jobs.json"
-ACTIVE = ("queued", "downloading", "transferring")
+ACTIVE = ("queued", "downloading", "transferring", "installing")
 
 
 class Manager:
@@ -35,7 +35,7 @@ class Manager:
             return
         for j in data.get("jobs", []):
             # nada continua "rodando" depois de um restart do servidor
-            if j.get("status") in ("downloading", "transferring"):
+            if j.get("status") in ("downloading", "transferring", "installing"):
                 j["status"] = "queued"
             self.jobs[j["id"]] = j
         self.order = [i for i in data.get("order", []) if i in self.jobs]
@@ -115,6 +115,39 @@ class Manager:
     # nome antigo
     add_upload = add_transfer
 
+    def add_install(self, filename):
+        """Enfileira instalacao direta: o console baixa do PC e instala.
+
+        Dispensa a copia em /data/pkg -- um jogo de 44 GB deixa de exigir 88 GB
+        livres no console.
+        """
+        path = settings.dest / Path(filename).name
+        if not path.exists():
+            raise FileNotFoundError(filename)
+        size = path.stat().st_size
+        with self._lock:
+            for j in self.jobs.values():
+                if (j["type"] == "install" and j["filename"] == path.name
+                        and j["status"] in ACTIVE):
+                    return j, False
+            jid = uuid.uuid4().hex[:12]
+            job = {
+                "id": jid, "type": "install", "url": None,
+                "name": path.name, "filename": path.name, "size": size,
+                "remote_dir": None, "dest_name": "instalação direta",
+                "title_id": "", "region": "", "kind": "install", "cover_url": "",
+                "status": "queued", "error": None, "result": None,
+                "task_id": None, "console_title": "",
+                "progress": {"downloaded": 0, "size": size,
+                             "percent": 0.0, "speed": 0, "eta": None},
+                "added_at": time.time(), "finished_at": None,
+            }
+            self.jobs[jid] = job
+            self.order.append(jid)
+        self._save()
+        self._wake.set()
+        return job, True
+
     def cancel(self, jid):
         with self._lock:
             job = self.jobs.get(jid)
@@ -191,7 +224,7 @@ class Manager:
 
     def _next(self):
         with self._lock:
-            running = sum(1 for j in self.jobs.values() if j["status"] in ("downloading", "transferring"))
+            running = sum(1 for j in self.jobs.values() if j["status"] in ("downloading", "transferring", "installing"))
             if running >= int(settings["parallel_jobs"]):
                 return None
             for jid in self.order:
@@ -214,11 +247,14 @@ class Manager:
             job = self.jobs.get(jid)
             if not job or job["status"] != "queued":
                 return
-            job["status"] = "downloading" if job["type"] == "download" else "transferring"
+            job["status"] = {"download": "downloading",
+                             "install": "installing"}.get(job["type"], "transferring")
         self._save()
         try:
             if job["type"] == "download":
                 self._run_download(job)
+            elif job["type"] == "install":
+                self._run_install(job)
             else:
                 self._run_transfer(job)
         except Cancelled:
@@ -255,6 +291,65 @@ class Manager:
         dl.run(on_tick=tick)
         job["progress"] = dl.progress()
         job["size"] = dl.size
+        job["status"] = "done"
+
+    def _run_install(self, job):
+        """O console puxa o arquivo deste PC e instala sozinho."""
+        from .config import lan_ip
+        from .server import pkg_alias
+
+        ev = threading.Event()
+        self._cancels[job["id"]] = ev
+
+        alias = pkg_alias(job["filename"])
+        url = f"http://{lan_ip()}:{settings['http_port']}/pkg/{alias}"
+        job["url"] = url
+
+        started = ps4.rpi_install([url])
+        job["task_id"] = started["task_id"]
+        job["console_title"] = started["title"]
+        if started["title"]:
+            job["name"] = started["title"]
+        self._save()
+
+        last_save = 0.0
+        stale = 0
+        while True:
+            if ev.is_set():
+                try:
+                    ps4._rpi_post("/api/stop_task", {"task_id": job["task_id"]})
+                except Exception:
+                    pass
+                raise InterruptedError("instalação cancelada")
+            time.sleep(2)
+            try:
+                pr = ps4.rpi_progress(job["task_id"])
+                stale = 0
+            except Exception as e:
+                # a tarefa some da lista assim que o console termina
+                stale += 1
+                if stale >= 3:
+                    job["error"] = None
+                    break
+                continue
+            if pr["error"]:
+                raise IOError(f"o console reportou erro {pr['error']:#x} na instalação")
+            job["progress"] = {
+                "downloaded": pr["transferred"], "size": pr["size"] or job["size"],
+                "percent": pr["percent"], "speed": 0,
+                "eta": pr["rest_sec"] or None,
+                "preparing": pr["preparing"], "installing": pr["installing"],
+            }
+            if time.time() - last_save > 2:
+                last_save = time.time()
+                self._save()
+            if pr["done"]:
+                break
+
+        job["progress"]["percent"] = 100.0
+        job["result"] = {"task_id": job["task_id"], "title": job["console_title"],
+                         "url": url}
+        ps4.invalidate_installed_cache()
         job["status"] = "done"
 
     def _run_transfer(self, job):

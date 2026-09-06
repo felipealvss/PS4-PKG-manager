@@ -73,6 +73,34 @@ Title ID.
 resultado fica em cache por 10 minutos, carrega só ao abrir a aba e, com o
 console desligado, some com um aviso sem afetar o resto.
 
+## Instalação direta (o caminho mais curto)
+
+Na aba Biblioteca, **Instalar** faz o console baixar o pacote deste PC pela rede
+local e instalar direto, sem cópia intermediária:
+
+| | Transferir | **Instalar** |
+|---|---|---|
+| Espaço no console | ~88 GB (pkg + instalado) | **~44 GB** |
+| Etapas | transferir, depois instalar | uma só |
+| Cópia em `/data/pkg` | 43,8 GB | nenhuma |
+
+Exige o **Package Installer aberto no console** (porta 12800). O programa detecta
+e, quando não está respondendo, desabilita o botão e explica — a transferência
+por FTP continua disponível como alternativa.
+
+Duas coisas descobertas ao mapear a API do instalador, ambas necessárias para
+funcionar:
+
+- as respostas trazem números em **hexadecimal** (`0x1CC`), o que não é JSON
+  válido — `json.loads()` sozinho falha;
+- o cliente HTTP do console **decodifica a URL e não a recodifica** ao requisitar,
+  então `Nidhogg - [US] [EN] [1.02].pkg` falha com *"Unable to set up
+  prerequisites"*. Por isso os pacotes também são servidos sob um apelido ASCII
+  simples em `/pkg/<hash>-<nome>.pkg`, usado só nas URLs entregues ao console.
+
+O console resolve o nome do título sozinho a partir do `.pkg` e o devolve na
+resposta, então a fila passa a mostrar "Nidhogg" no lugar do nome do arquivo.
+
 ## Transferência para o destino final
 
 Escolha o destino no seletor da aba Biblioteca e clique em **Transferir**. O que
