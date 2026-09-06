@@ -63,6 +63,27 @@ baixa os mesmos catálogos e trabalha em cima deles. Não precisa extrair o
 
 ## Biblioteca unificada
 
+## Base, atualização e DLC
+
+Cada `.pkg` no PC é classificado lendo o **cabeçalho do próprio arquivo**, não o
+nome. O nome engana: `UP9000-CUSA02299_00-MARVELSSPIDERMAN-A0100` e `...-A0119`
+parecem dois jogos e são a base e uma atualização do mesmo título.
+
+O cabeçalho resolve sem ambiguidade — `content_type` `0x1A` é jogo, `0x1B` é
+DLC, e os bits de patch em `content_flags` separam base de atualização. O
+`content_id` também dá o Title ID autoritativo, que passou a ser usado no lugar
+de adivinhar pelo nome do arquivo.
+
+A tabela mostra o nome do jogo com o arquivo abaixo e uma etiqueta de tipo.
+Ordenar por **Título** põe os arquivos de um mesmo jogo lado a lado — o
+agrupamento sai da ordenação, sem um mecanismo separado que brigaria com a
+paginação.
+
+> Agrupar o **catálogo** por título, que era a ideia original, não valia: dos
+> 866 Title IDs, apenas 2 têm mais de uma entrada. O acervo do FPKGi configurado
+> aqui é quase todo de jogos-base. Quem tem base, atualização e DLC misturados é
+> a biblioteca local — e é lá que a classificação foi aplicada.
+
 As tabelas da **Fila** e da **Biblioteca** são ordenáveis por qualquer coluna:
 clicar no cabeçalho alterna crescente, decrescente e de volta à ordem natural
 (a ordem de execução, no caso da fila). Colunas numéricas começam do maior para

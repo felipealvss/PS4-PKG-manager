@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import catalog, ps4
+from . import catalog, pkgmeta, ps4
 from .config import COVER_DIR, ConfigError, ensure_dirs, lan_ip, settings
 from .engine import UA
 from .jobs import manager
@@ -34,15 +34,37 @@ def get_catalog(force=False):
 
 
 def library():
-    """PKGs ja baixados por completo, na pasta de destino."""
+    """PKGs ja baixados por completo, na pasta de destino.
+
+    Cada um vem classificado pelo cabecalho do proprio pacote -- base,
+    atualizacao, DLC ou tema -- porque o nome do arquivo nao diz isso: os dois
+    "MARVELSSPIDERMAN" da pasta sao a base e uma atualizacao do mesmo titulo.
+    """
     out = []
     dest = settings.dest
     if not dest.exists():
         return out
+    by_tid = {}
+    for it in get_catalog().get("items", []):
+        by_tid.setdefault(it["title_id"], it)
     for p in sorted(dest.iterdir()):
-        if p.is_file() and p.suffix.lower() == ".pkg":
-            st = p.stat()
-            out.append({"filename": p.name, "size": st.st_size, "mtime": st.st_mtime})
+        if not (p.is_file() and p.suffix.lower() == ".pkg"):
+            continue
+        st = p.stat()
+        meta = pkgmeta.read(p)
+        tid = meta["title_id"] or guess_title_id(p.name)
+        catalog_entry = by_tid.get(tid)
+        out.append({
+            "filename": p.name,
+            "size": st.st_size,
+            "mtime": st.st_mtime,
+            "content_id": meta["content_id"],
+            "title_id": tid,
+            "kind": meta["kind"],
+            "kind_label": meta["kind_label"],
+            # o nome do jogo, quando o catalogo conhece o Title ID
+            "title": (catalog_entry or {}).get("name", ""),
+        })
     return out
 
 
@@ -84,7 +106,7 @@ def local_fpkgi_catalog(kind="games"):
     data = {}
     for f in library():
         meta = by_name.get(f["filename"])
-        tid = guess_title_id(f["filename"])
+        tid = f.get("title_id") or guess_title_id(f["filename"])
         if meta is None:
             meta = dict(by_tid.get(tid, {}))
             if tid:
@@ -227,12 +249,6 @@ def installed_view():
         if tid:
             local_tids.add(tid)
             local_names.setdefault(tid, f["filename"])
-    by_fname = {i["filename"]: i for i in get_catalog().get("items", [])}
-    for f in library():
-        meta = by_fname.get(f["filename"])
-        if meta and meta["title_id"]:
-            local_tids.add(meta["title_id"])
-            local_names.setdefault(meta["title_id"], f["filename"])
 
     out = []
     for t in items:

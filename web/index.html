@@ -97,6 +97,10 @@
   .org.dusk{background:#2a1f3d;color:#c4a3f0}
   .org.arch{background:#12325e;color:#7ab8ff}
   .org.here{background:#12341c;color:#6fdc8c}
+  .kind{font-size:11px;padding:2px 8px;border-radius:3px;white-space:nowrap;
+        background:var(--panel2);color:var(--dim)}
+  .kind.upd{background:#12325e;color:#7ab8ff}
+  .kind.dlc{background:#2a1f3d;color:#c4a3f0}
   .haslocal{font-size:11px;color:var(--ok)}
   .nolocal{font-size:11px;color:var(--dim)}
   /* --- Guia --- */
@@ -780,9 +784,14 @@ async function loadLib() {
 
 function renderLib() {
   const q = libState.q;
-  const files = sortRows(libState.files.filter(f => matches(f.filename, q)), 'lib', {
-    filename: f => f.filename, size: f => f.size, mtime: f => f.mtime,
-  });
+  const files = sortRows(
+    libState.files.filter(f => matches(`${f.filename} ${f.title} ${f.title_id}`, q)),
+    'lib', {
+      title: f => f.title || f.filename,
+      kind:  f => f.kind_label || 'zzz',
+      size:  f => f.size,
+      mtime: f => f.mtime,
+    });
   const parts = libState.partials.filter(p => matches(p.filename, q));
   const total = files.reduce((a, f) => a + f.size, 0);
   $('#libsub').textContent = q
@@ -798,8 +807,12 @@ function renderLib() {
   if (libState.page > pages) libState.page = pages;
   const slice = files.slice((libState.page - 1) * PER_LIB, libState.page * PER_LIB);
 
+  const kindCls = k => k === 'atualização' ? 'upd' : k === 'DLC' ? 'dlc' : '';
   const rows = slice.map(f => `<tr>
-      <td>${f.filename}</td>
+      <td><div class="nm">${f.title || f.filename}</div>
+        <div class="tid">${f.title ? f.filename : (f.title_id || '')}</div></td>
+      <td style="width:110px">${f.kind_label
+          ? `<span class="kind ${kindCls(f.kind_label)}">${f.kind_label}</span>` : ''}</td>
       <td style="width:110px">${human(f.size)}</td>
       <td style="width:150px" class="muted">${new Date(f.mtime*1000).toLocaleString('pt-BR')}</td>
       <td style="text-align:right;white-space:nowrap">
@@ -809,11 +822,12 @@ function renderLib() {
         <button class="act danger" data-del="${encodeURIComponent(f.filename)}">Excluir</button>
       </td></tr>`).join('');
   const partRows = (libState.page === 1 ? parts : []).map(p => `<tr class="muted">
-      <td>${p.filename}</td><td>${human(p.downloaded)} / ${human(p.size)}</td>
+      <td>${p.filename}</td><td></td><td>${human(p.downloaded)} / ${human(p.size)}</td>
       <td colspan="2">${p.percent}% — incompleto, retoma daqui</td></tr>`).join('');
 
   $('#lib').innerHTML = `<table><thead><tr>
-    ${th('lib','filename','Arquivo')}
+    ${th('lib','title','Título')}
+    ${th('lib','kind','Tipo','style="width:110px"')}
     ${th('lib','size','Tamanho','style="width:110px"')}
     ${th('lib','mtime','Baixado em','style="width:150px"')}
     <th></th></tr></thead><tbody>${rows}${partRows}</tbody></table>`;
@@ -1079,6 +1093,9 @@ const ERRORS = [
   ['Unable to set up prerequisites for package',
    'O cliente HTTP do console decodifica a URL e não a recodifica ao requisitar, então nome de arquivo com espaço ou colchete quebra a instalação.',
    'Já tratado: os pacotes são servidos ao console sob um apelido ASCII simples. Se aparecer, é sinal de que a URL chegou de outro jeito.'],
+  ['Coluna Tipo vazia em algum arquivo',
+   'O cabeçalho do .pkg não pôde ser lido — arquivo truncado, ou um formato que não é PKG de PS4.',
+   'O download já confere a assinatura antes de concluir, então isso normalmente indica um arquivo colocado na pasta por fora. Confira o arquivo.'],
   ['Botão Instalar desabilitado',
    'O Package Installer não está respondendo no console. A porta 12800 continua aceitando conexão mesmo quando o app sai de foco, então só uma requisição real revela.',
    'Abra o Package Installer no console e deixe em foco. Enquanto isso, <b>Transferir</b> continua funcionando normalmente.'],
