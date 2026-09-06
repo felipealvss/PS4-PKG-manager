@@ -323,26 +323,19 @@
     </details>
 
     <details class="acc" data-acc="use">
-      <summary>Uso no dia a dia <span class="tease">buscar → baixar → transferir</span></summary>
+      <summary>Uso no dia a dia <span class="tease">buscar → baixar → levar</span></summary>
       <div class="body">
         <ol>
           <li><b>Catálogo</b> — busque por nome ou Title ID. Marque <b>só disponíveis</b>
               para esconder o que o archive.org bloqueou.</li>
           <li><b>Baixar</b> — o item entra na fila. Um de cada vez por padrão, para
               que ele use todos os espelhos daquele item.</li>
-          <li><b>Fila</b> — progresso, velocidade e tempo restante, paginada de 8 em 8.
-              Pode fechar o programa: ao reabrir, retoma do ponto exato.</li>
-          <li><b>Biblioteca</b> — duas listas empilhadas: o que está <b>no PC</b> e o
-              que está <b>instalado no console</b>. A busca no topo filtra as duas ao
-              mesmo tempo, cada uma pagina de 8 em 8, e o cabeçalho mostra a contagem
-              com o tamanho total — a aba não cresce sem fim conforme a biblioteca
-              aumenta. Nas três tabelas do programa, clicar no cabeçalho ordena:
-              crescente, decrescente e de volta à ordem natural. Colunas numéricas
-              começam do maior para o menor, e a escolha fica guardada entre sessões. Escolha o destino e clique em <b>Instalar</b> ou
-              <b>Transferir</b>. A lista do console traz
-              <b>o que já está instalado no console</b>, com o ícone real de cada
-              título e de onde ele veio (Duskaryon, archive.org, local/USB) —
-              leitura pura, o programa nunca escreve em <code>/user/app</code>.</li>
+          <li><b>Fila</b> — progresso, velocidade e tempo restante. Pode fechar o
+              programa: ao reabrir, retoma do ponto exato.</li>
+          <li><b>Biblioteca</b> — escolha o arquivo e clique em <b>Instalar</b> (o
+              console baixa daqui e instala) ou <b>Transferir</b> (copia para uma pasta
+              do console). As duas opções estão detalhadas em
+              <i>Levar para o console</i>.</li>
         </ol>
       </div>
     </details>
@@ -431,8 +424,47 @@
       </div>
     </details>
 
+    <details class="acc" data-acc="biblio">
+      <summary>Organização da biblioteca <span class="tease">o que o programa sabe sobre cada arquivo</span></summary>
+      <div class="body">
+        <p>A aba mostra <b>duas listas empilhadas</b>: o que está no PC e o que já está
+           instalado no console. A busca no topo filtra as duas ao mesmo tempo, cada uma
+           pagina de 8 em 8 e o cabeçalho traz a contagem com o tamanho total — a aba tem
+           altura previsível por maior que fique a biblioteca.</p>
+
+        <h3>Base, atualização e DLC</h3>
+        <p>Cada pacote no PC é classificado lendo o <b>cabeçalho do próprio arquivo</b>,
+           não o nome. O nome engana: <code>MARVELSSPIDERMAN-A0100</code> e
+           <code>...-A0119</code> parecem dois jogos e são a base e uma atualização do
+           mesmo título.</p>
+        <p>O cabeçalho resolve sem ambiguidade — <code>content_type</code> separa jogo de
+           DLC e de tema, e os bits de patch separam base de atualização. O
+           <code>content_id</code> ainda entrega o Title ID autoritativo, usado no lugar
+           de adivinhar pelo nome do arquivo.</p>
+        <p><b>Ordenar por Título</b> põe os arquivos de um mesmo jogo lado a lado: a base
+           seguida da sua atualização, o jogo seguido do seu DLC.</p>
+
+        <h3>O que está no console</h3>
+        <p>Lista somente-leitura — o programa nunca escreve em <code>/user/app</code>.
+           Traz o ícone real de cada título, o espaço que ocupa e <b>de onde o pacote
+           veio</b>, lido do próprio <code>app.json</code> do console:
+           <span class="org">local / USB</span>
+           <span class="org dusk">Duskaryon</span>
+           <span class="org arch">archive.org</span>
+           <span class="org here">este PC</span>.
+           A coluna final marca quais deles você tem em <code>.pkg</code> aqui, casando
+           por Title ID.</p>
+
+        <h3>Ordenação</h3>
+        <p>Nas três tabelas do programa — fila, PC e console — clicar no cabeçalho
+           alterna <b>crescente → decrescente → ordem natural</b>. Colunas numéricas
+           começam do maior para o menor, e a escolha fica guardada entre sessões. Na
+           fila, a ordem natural é a de execução.</p>
+      </div>
+    </details>
+
     <details class="acc" data-acc="ps4">
-      <summary>Levar para o console <span class="tease">três caminhos</span></summary>
+      <summary>Levar para o console <span class="tease">quatro caminhos</span></summary>
       <div class="body">
         <ol>
           <li><b>Instalar</b> (aba Biblioteca) — o console baixa o pacote deste PC pela
