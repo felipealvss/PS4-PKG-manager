@@ -91,6 +91,7 @@
        background:var(--panel2);color:var(--dim)}
   .org.dusk{background:#2a1f3d;color:#c4a3f0}
   .org.arch{background:#12325e;color:#7ab8ff}
+  .org.here{background:#12341c;color:#6fdc8c}
   .haslocal{font-size:11px;color:var(--ok)}
   .nolocal{font-size:11px;color:var(--dim)}
   /* --- Guia --- */
@@ -201,14 +202,21 @@
   <!-- BIBLIOTECA -->
   <section id="tab-lib" hidden>
     <div class="row">
+      <input type="search" id="libq" placeholder="buscar na biblioteca…" autocomplete="off">
       <label class="muted">Destino no console</label>
       <select id="dest"></select>
       <label class="muted" style="display:flex;gap:6px;align-items:center;cursor:pointer">
         <input type="checkbox" id="delafter" style="width:auto;min-width:0">
         apagar a cópia local após confirmar</label>
-      <span class="muted" id="instnote"></span>
+    </div>
+    <div class="muted" id="instnote" style="margin-top:8px;font-size:13px"></div>
+
+    <div class="sechead">
+      <h2>No PC</h2>
+      <span class="sub" id="libsub"></span>
     </div>
     <div id="lib"></div>
+    <div class="pager" id="libpager"></div>
 
     <div class="sechead">
       <h2>Instalado no console</h2>
@@ -216,6 +224,7 @@
       <button class="act" id="instreload">Reler do console</button>
     </div>
     <div id="installed"></div>
+    <div class="pager" id="instpager"></div>
   </section>
 
   <!-- PS4 -->
@@ -313,8 +322,12 @@
               que ele use todos os espelhos daquele item.</li>
           <li><b>Fila</b> — progresso, velocidade e tempo restante. Pode fechar o
               programa: ao reabrir, retoma do ponto exato.</li>
-          <li><b>Biblioteca</b> — escolha o destino no console e clique em
-              <b>Transferir</b>. Abaixo dos arquivos locais, a mesma aba lista
+          <li><b>Biblioteca</b> — duas listas empilhadas: o que está <b>no PC</b> e o
+              que está <b>instalado no console</b>. A busca no topo filtra as duas ao
+              mesmo tempo, cada uma pagina de 8 em 8, e o cabeçalho mostra a contagem
+              com o tamanho total — a aba não cresce sem fim conforme a biblioteca
+              aumenta. Escolha o destino e clique em <b>Instalar</b> ou
+              <b>Transferir</b>. A lista do console traz
               <b>o que já está instalado no console</b>, com o ícone real de cada
               título e de onde ele veio (Duskaryon, archive.org, local/USB) —
               leitura pura, o programa nunca escreve em <code>/user/app</code>.</li>
@@ -650,13 +663,58 @@ function renderQueue(jobs) {
 }
 $('#clearq').onclick = async () => { await api('/api/queue/clear', {}); poll(); };
 
-/* ---------- biblioteca ---------- */
+/* ---------- biblioteca: PC + console, cada lista paginada ---------- */
+const PER_LIB = 8;
+const libState  = {q: '', page: 1, files: [], partials: []};
+const instState = {page: 1, titles: [], error: null, loaded: false};
+
+const matches = (hay, q) => !q || q.split(/\s+/).filter(Boolean)
+  .every(t => hay.toLowerCase().includes(t));
+
+function pager(el, total, page, onGo) {
+  const pages = Math.max(1, Math.ceil(total / PER_LIB));
+  el.innerHTML = '';
+  if (pages < 2) return;
+  const mk = (txt, pg, dis) => {
+    const b = document.createElement('button');
+    b.className = 'act'; b.textContent = txt; b.disabled = dis;
+    b.onclick = () => onGo(pg);
+    el.append(b);
+  };
+  mk('‹ anterior', page - 1, page <= 1);
+  const sp = document.createElement('span');
+  sp.className = 'muted'; sp.textContent = `${page} / ${pages}`;
+  el.append(sp);
+  mk('próxima ›', page + 1, page >= pages);
+}
+
+/* --- no PC --- */
 async function loadLib() {
-  let d; try { d = await api('/api/library'); } catch (e) { return toast(e.message, true); }
-  if (!d.files.length && !d.partials.length) {
-    $('#lib').innerHTML = '<div class="empty">Nada baixado ainda.</div>'; return;
+  let d;
+  try { d = await api('/api/library'); } catch (e) { return toast(e.message, true); }
+  libState.files = d.files; libState.partials = d.partials;
+  renderLib();
+}
+
+function renderLib() {
+  const q = libState.q;
+  const files = libState.files.filter(f => matches(f.filename, q));
+  const parts = libState.partials.filter(p => matches(p.filename, q));
+  const total = files.reduce((a, f) => a + f.size, 0);
+  $('#libsub').textContent = q
+    ? `${files.length} de ${libState.files.length} · ${human(total)}`
+    : `${files.length} arquivos · ${human(total)}`;
+
+  if (!files.length && !parts.length) {
+    $('#lib').innerHTML = `<div class="empty">${q ? 'Nada encontrado aqui.' : 'Nada baixado ainda.'}</div>`;
+    $('#libpager').innerHTML = '';
+    return;
   }
-  const rows = d.files.map(f => `<tr>
+  const pages = Math.max(1, Math.ceil(files.length / PER_LIB));
+  if (libState.page > pages) libState.page = pages;
+  const slice = files.slice((libState.page - 1) * PER_LIB, libState.page * PER_LIB);
+
+  const rows = slice.map(f => `<tr>
       <td>${f.filename}</td>
       <td style="width:110px">${human(f.size)}</td>
       <td style="width:150px" class="muted">${new Date(f.mtime*1000).toLocaleString('pt-BR')}</td>
@@ -666,11 +724,14 @@ async function loadLib() {
         <button class="act" data-push="${encodeURIComponent(f.filename)}">Transferir</button>
         <button class="act danger" data-del="${encodeURIComponent(f.filename)}">Excluir</button>
       </td></tr>`).join('');
-  const parts = d.partials.map(p => `<tr class="muted">
+  const partRows = (libState.page === 1 ? parts : []).map(p => `<tr class="muted">
       <td>${p.filename}</td><td>${human(p.downloaded)} / ${human(p.size)}</td>
       <td colspan="2">${p.percent}% — incompleto, retoma daqui</td></tr>`).join('');
+
   $('#lib').innerHTML = `<table><thead><tr><th>Arquivo</th><th>Tamanho</th>
-    <th>Baixado em</th><th></th></tr></thead><tbody>${rows}${parts}</tbody></table>`;
+    <th>Baixado em</th><th></th></tr></thead><tbody>${rows}${partRows}</tbody></table>`;
+  pager($('#libpager'), files.length, libState.page, pg => { libState.page = pg; renderLib(); });
+
   $('#lib').querySelectorAll('[data-inst]').forEach(b => b.onclick = async () => {
     const n = decodeURIComponent(b.dataset.inst);
     if (!confirm(`Instalar "${n}" no PS4?\n\n` +
@@ -693,38 +754,57 @@ async function loadLib() {
   $('#lib').querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     const n = decodeURIComponent(b.dataset.del);
     if (!confirm('Excluir ' + n + ' do PC?')) return;
-    try { await api('/api/library/delete', {filename:n}); loadLib(); poll(); }
+    try { await api('/api/library/delete', {filename: n}); loadLib(); poll(); }
     catch (e) { toast(e.message, true); }
   });
 }
 
-/* ---------- instalados no console (somente leitura) ---------- */
-let instLoaded = false;
+/* --- no console --- */
 async function loadInstalled(force) {
-  const box = $('#installed'), sub = $('#instsub');
-  if (!force && instLoaded) return;
-  box.innerHTML = '<div class="muted" style="padding:10px 0">lendo o console…</div>';
+  if (!force && instState.loaded) { renderInstalled(); return; }
+  $('#installed').innerHTML = '<div class="muted" style="padding:10px 0">lendo o console…</div>';
   let d;
   try {
     d = force ? await api('/api/installed/refresh', {}) : await api('/api/installed');
   } catch (e) { d = {titles: [], error: e.message}; }
-  instLoaded = true;
+  instState.titles = d.titles || [];
+  instState.error = d.error || null;
+  instState.loaded = true;
+  renderInstalled();
+}
 
-  if (d.error || !d.titles.length) {
-    sub.textContent = '';
+function renderInstalled() {
+  const q = libState.q, box = $('#installed');
+  const all = instState.titles.filter(t => matches(t.name + ' ' + t.title_id, q));
+  const total = all.reduce((a, t) => a + t.size, 0);
+
+  if (instState.error || !instState.titles.length) {
+    $('#instsub').textContent = '';
+    $('#instpager').innerHTML = '';
     box.innerHTML = `<div class="muted" style="padding:10px 0">${
-      d.error ? 'Console indisponível — ' + d.error : 'Nada encontrado no console.'}</div>`;
+      instState.error ? 'Console indisponível — ' + instState.error
+                      : 'Nada encontrado no console.'}</div>`;
     return;
   }
-  const total = d.titles.reduce((a, t) => a + t.size, 0);
-  sub.textContent = `${d.titles.length} títulos · ${human(total)} ocupados`;
+  $('#instsub').textContent = q
+    ? `${all.length} de ${instState.titles.length} · ${human(total)}`
+    : `${all.length} títulos · ${human(total)} ocupados`;
+  if (!all.length) {
+    $('#instpager').innerHTML = '';
+    box.innerHTML = '<div class="empty">Nada encontrado no console.</div>';
+    return;
+  }
+  const pages = Math.max(1, Math.ceil(all.length / PER_LIB));
+  if (instState.page > pages) instState.page = pages;
+  const slice = all.slice((instState.page - 1) * PER_LIB, instState.page * PER_LIB);
 
   box.innerHTML = `<table><thead><tr>
       <th>Título</th><th style="width:100px">Tamanho</th>
       <th style="width:130px">Instalado de</th><th style="width:150px">Cópia local</th>
-    </tr></thead><tbody>${d.titles.map(t => {
+    </tr></thead><tbody>${slice.map(t => {
       const cls = /duskaryon/i.test(t.origin) ? 'dusk'
-                : /archive/i.test(t.origin) ? 'arch' : '';
+                : /archive/i.test(t.origin) ? 'arch'
+                : /este pc/i.test(t.origin) ? 'here' : '';
       return `<tr>
         <td><div class="tname">
           ${t.has_icon ? `<img class="ico" loading="lazy"
@@ -736,12 +816,23 @@ async function loadInstalled(force) {
           </div></div></td>
         <td>${human(t.size)}</td>
         <td><span class="org ${cls}">${t.origin}</span></td>
-        <td>${t.local_copy
-              ? '<span class="haslocal">✓ tenho o .pkg</span>'
-              : '<span class="nolocal">—</span>'}</td>
+        <td>${t.local_copy ? '<span class="haslocal">✓ tenho o .pkg</span>'
+                           : '<span class="nolocal">—</span>'}</td>
       </tr>`;
     }).join('')}</tbody></table>`;
+  pager($('#instpager'), all.length, instState.page,
+        pg => { instState.page = pg; renderInstalled(); });
 }
+
+let libTimer;
+$('#libq').oninput = () => {
+  clearTimeout(libTimer);
+  libTimer = setTimeout(() => {
+    libState.q = $('#libq').value.trim();
+    libState.page = 1; instState.page = 1;
+    renderLib(); renderInstalled();
+  }, 200);
+};
 $('#instreload').onclick = async e => {
   e.target.disabled = true; e.target.textContent = 'Lendo…';
   await loadInstalled(true);

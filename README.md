@@ -63,8 +63,12 @@ baixa os mesmos catálogos e trabalha em cima deles. Não precisa extrair o
 
 ## Biblioteca unificada
 
-A aba Biblioteca mostra os arquivos no PC e, abaixo, **o que já está instalado no
-console** — com o ícone real de cada título, o tamanho ocupado e de onde o pacote
+A aba Biblioteca traz duas listas empilhadas: os arquivos **no PC** e **o que já
+está instalado no console**. A busca no topo filtra as duas simultaneamente, cada
+uma pagina de 8 em 8 e o cabeçalho mostra a contagem com o tamanho total — a aba
+tem altura previsível independente do tamanho da biblioteca.
+
+A lista do console mostra — com o ícone real de cada título, o tamanho ocupado e de onde o pacote
 veio, lido do próprio `app.json` do console: `local / USB`, `Duskaryon`,
 `archive.org`. Também marca quais deles você tem em `.pkg` aqui, casando por
 Title ID.
