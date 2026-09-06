@@ -7,6 +7,7 @@ retomar upload interrompido e conferir o tamanho no console depois.
 import ftplib
 import io
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -66,16 +67,34 @@ def _quit(ftp):
             pass
 
 
-def ping(timeout=5):
-    """(online, detalhe) -- usado pelo painel de status da interface."""
+_ping_cache = {"t": 0.0, "val": None, "key": None}
+_ping_lock = threading.Lock()
+
+
+def ping(timeout=5, max_age=0):
+    """(online, detalhe) -- usado pelo painel de status da interface.
+
+    Com o console desligado cada tentativa custa o timeout inteiro, e a
+    interface consulta o status a cada 15s. max_age reaproveita a ultima
+    resposta por alguns segundos; o preflight chama sem cache.
+    """
+    key = (settings["ps4_host"], settings["ps4_ftp_port"])
+    if max_age:
+        with _ping_lock:
+            c = _ping_cache
+            if c["key"] == key and c["val"] and time.time() - c["t"] < max_age:
+                return c["val"]
     try:
         ftp = connect(timeout=timeout)
         try:
-            return True, (ftp.getwelcome() or "").strip()
+            res = (True, (ftp.getwelcome() or "").strip())
         finally:
             _quit(ftp)
     except Exception as e:
-        return False, f"{type(e).__name__}: {e}"
+        res = (False, f"{type(e).__name__}: {e}")
+    with _ping_lock:
+        _ping_cache.update(t=time.time(), val=res, key=key)
+    return res
 
 
 # ---------- arquivos ----------

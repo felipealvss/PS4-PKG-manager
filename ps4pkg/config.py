@@ -37,9 +37,11 @@ DEFAULTS = {
     "delete_after_transfer": False,
 
     # --- download ---
-    # archive.org limita ~3 Mbps por IP; mais de 16 conexoes nao acelera.
+    # POR ESPELHO. O limite de banda do archive.org e de cada servidor, nao do
+    # IP de quem baixa: 16 conexoes num espelho so deram 0,38 MB/s no mesmo
+    # arquivo em que 16 em cada um dos 3 espelhos deram 24,3 MB/s.
     "connections": 16,
-    # um de cada vez: downloads simultaneos dividem o mesmo teto.
+    # um de cada vez, para que o download da vez use todos os espelhos do item
     "parallel_jobs": 1,
     "chunk_mb": 4,
 

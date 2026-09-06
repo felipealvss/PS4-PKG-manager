@@ -260,16 +260,20 @@
            do console. Este programa lê esse config por FTP, baixa os mesmos catálogos
            e trabalha em cima deles.</p>
         <div class="flow">
-          <div class="box"><div class="t">archive.org → PC</div><div class="v">~3 Mbps</div>
-            <div class="s">16 conexões. O limite é por IP: mais conexões não aceleram.</div></div>
+          <div class="box"><div class="t">archive.org → PC</div><div class="v">~204 Mbps</div>
+            <div class="s">16 conexões em cada espelho. Num espelho só seriam ~3 Mbps.</div></div>
           <div class="ar">→</div>
           <div class="box"><div class="t">PC → PS4 (LAN)</div><div class="v">~43 Mbps</div>
-            <div class="s">5,4 MB/s medidos. Minutos, não horas.</div></div>
+            <div class="s">5,4 MB/s medidos. Agora é esta a etapa mais lenta.</div></div>
         </div>
-        <p>Para comparação, o FPKGi baixando sozinho no console usa <b>uma conexão só</b>:
-           ~1,4 Mbps. Um jogo de 7 GB leva ~11h lá e ~5h aqui. <b>O ganho principal não é
-           a velocidade</b> — é a fila rodar sozinha de madrugada, retomar sozinha depois
-           de queda, e não prender o console.</p>
+        <p><b>O limite do archive.org é por servidor, não por IP.</b> Um espelho
+           congestionado entrega 0,38 MB/s e faz parecer que há um teto; os mesmos
+           43,8 GB divididos entre os três espelhos do item vieram a 24,3 MB/s —
+           de 31 horas para 23 minutos. Por isso o programa mede todos os espelhos
+           antes de começar e usa todos.</p>
+        <p>O FPKGi no console usa <b>uma conexão só, num servidor só</b>: ~1,4 Mbps.
+           Além da velocidade, a fila aqui roda sozinha, retoma depois de queda e não
+           prende o console.</p>
       </div>
     </details>
 
@@ -279,8 +283,8 @@
         <ol>
           <li><b>Catálogo</b> — busque por nome ou Title ID. Marque <b>só disponíveis</b>
               para esconder o que o archive.org bloqueou.</li>
-          <li><b>Baixar</b> — o item entra na fila. Um de cada vez por padrão, porque
-              downloads simultâneos apenas dividem o mesmo teto de 3 Mbps.</li>
+          <li><b>Baixar</b> — o item entra na fila. Um de cada vez por padrão, para
+              que ele use todos os espelhos daquele item.</li>
           <li><b>Fila</b> — progresso, velocidade e tempo restante. Pode fechar o
               programa: ao reabrir, retoma do ponto exato.</li>
           <li><b>Biblioteca</b> — escolha o destino no console e clique em
@@ -345,8 +349,9 @@
   <section id="tab-cfg" hidden>
     <div class="panel">
       <h2>Ajustes</h2>
-      <p>O archive.org limita a banda por IP em torno de 3 Mbps. Passar de 16 conexões
-         não acelera, e baixar dois jogos ao mesmo tempo só divide o mesmo teto.</p>
+      <p><b>Conexões por download</b> é por espelho: com 3 espelhos e 16 conexões,
+         são 48 no total. O limite de banda do archive.org é de cada servidor, então
+         somar espelhos é o que acelera — espalhar as mesmas conexões, não.</p>
       <div id="cfg"></div>
     </div>
   </section>
@@ -712,8 +717,8 @@ const CLI = [
 ];
 
 const CFG_HELP = {
-  connections: ['Conexões por download', 'Acima de 16 não adianta: o teto é do archive.org, por IP.'],
-  parallel_jobs: ['Downloads simultâneos', 'Dois ao mesmo tempo apenas dividem o mesmo teto.'],
+  connections: ['Conexões por espelho', 'Multiplicado pelo nº de espelhos do item. 16 × 3 = 48 conexões.'],
+  parallel_jobs: ['Downloads simultâneos', 'Um de cada vez usa todos os espelhos daquele item.'],
   chunk_mb: ['Tamanho do pedaço', 'Unidade de retomada. Menor perde menos numa queda, mas gera mais estado.'],
   dest: ['Pasta de destino (neste PC)', 'Precisa ser disco local. Recusa URL.'],
   ps4_host: ['IP do PS4', 'Mude aqui se o console trocar de IP.'],

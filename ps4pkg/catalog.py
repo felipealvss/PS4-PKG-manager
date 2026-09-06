@@ -90,11 +90,34 @@ def refresh(progress=None):
         "errors": errors,
         "items": unique,
     }
+
+    # Nunca troque um catalogo bom por um vazio. Com o console desligado e sem
+    # extra_sources nao ha o que buscar, e perder a lista de 871 jogos no meio
+    # de um download de dois dias seria um estrago gratuito.
+    if not unique and CACHE.exists():
+        try:
+            old = json.loads(CACHE.read_text())
+            if old.get("items"):
+                old["errors"] = dict(old.get("errors") or {}, **errors)
+                old["errors"]["_refresh"] = (
+                    "nenhuma fonte acessivel agora (console desligado?); "
+                    "catalogo anterior mantido"
+                )
+                old["stale_since"] = time.time()
+                _write(old)
+                return old
+        except Exception:
+            pass
+
+    _write(payload)
+    return payload
+
+
+def _write(payload):
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     tmp = CACHE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False))
     tmp.replace(CACHE)
-    return payload
 
 
 def load(auto_refresh=True):

@@ -488,7 +488,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _api_status(self):
         du = shutil.disk_usage(settings.dest) if settings.dest.exists() else None
-        online, detail = ps4.ping(timeout=3)
+        online, detail = ps4.ping(timeout=3, max_age=20)
         self._json({
             "settings": settings.as_dict(),
             "catalog": self._cat_meta(),

@@ -110,11 +110,12 @@ def _probe(url, seconds=PROBE_SECONDS, timeout=25):
 
 
 def resolve(url, timeout=45, probe_seconds=PROBE_SECONDS):
-    """Escolhe o espelho mais rapido. Devolve (url_final, tamanho, True).
+    """Mede os espelhos e devolve (lista_de_urls, tamanho, True).
 
-    Mede a URL do catalogo e os nos ia* do item em paralelo e fica com o
-    melhor. Num download de dezenas de GB, escolher o no errado custa dias.
-    Parte do acervo ja foi bloqueada -- nesse caso todos dao 401/403.
+    A lista vem do mais rapido ao mais lento, e o download usa todos: o limite
+    de banda do archive.org e por no, nao por IP. Medido no mesmo arquivo de
+    43,8 GB -- 16 conexoes num no dao 385 KB/s, 8+8 nos dois dao 362, e 16+16
+    nos dois dao 475. Espalhar as mesmas conexoes nao adianta; somar nos, sim.
     """
     import concurrent.futures as cf
 
@@ -144,8 +145,9 @@ def resolve(url, timeout=45, probe_seconds=PROBE_SECONDS):
 
     if results:
         results.sort(reverse=True)          # mais rapido primeiro
-        speed, final, size, host = results[0]
-        return final, size, True
+        size = results[0][2]
+        # so aproveita espelhos que concordam com o tamanho do arquivo
+        return [r[1] for r in results if r[2] == size], size, True
 
     if any("401" in e or "403" in e for e in errors):
         raise IOError("pacote indisponivel no archive.org (item bloqueado). "
@@ -171,6 +173,7 @@ class Download:
         self.chunk = max(1, int(chunk_mb)) * 1024 * 1024
         self.size = int(expected_size or 0)
         self.final_url = url
+        self.mirrors = [url]
 
         self.part = self.incomplete_dir / (self.filename + ".part")
         self.state_file = self.incomplete_dir / (self.filename + ".json")
@@ -219,6 +222,7 @@ class Download:
             payload = {
                 "url": self.url,
                 "final_url": self.final_url,
+                "mirrors": list(self.mirrors),
                 "size": self.size,
                 "chunk": self.chunk,
                 "done": sorted(self.done),
@@ -255,7 +259,8 @@ class Download:
             "eta": eta,
             "status": self.status,
             "error": self.error,
-            "connections": self.connections,
+            "connections": self.connections * max(1, len(self.mirrors)),
+            "mirrors": len(self.mirrors),
         }
 
     def cancel(self):
@@ -263,7 +268,7 @@ class Download:
 
     # ---------- download ----------
 
-    def _fetch_chunk(self, idx):
+    def _fetch_chunk(self, idx, url):
         base = idx * self.chunk
         want = self._chunk_len(idx)
         end = base + want - 1
@@ -277,7 +282,7 @@ class Download:
             return
 
         got = 0
-        with _request(self.final_url, {"Range": f"bytes={base + off}-{end}"}) as r:
+        with _request(url, {"Range": f"bytes={base + off}-{end}"}) as r:
             if r.status != 206:
                 raise IOError(f"servidor ignorou Range (HTTP {r.status})")
             while True:
@@ -302,7 +307,9 @@ class Download:
             self.partial.pop(idx, None)
             self._dirty = True
 
-    def _worker(self):
+    def _worker(self, mirrors):
+        """mirrors ja vem rotacionada: cada worker comeca por um espelho
+        diferente e passa ao seguinte quando o dele falha."""
         while not self._stop.is_set():
             with self._lock:
                 if not self._pending:
@@ -312,7 +319,7 @@ class Download:
                 if self._stop.is_set():
                     return
                 try:
-                    self._fetch_chunk(idx)
+                    self._fetch_chunk(idx, mirrors[attempt % len(mirrors)])
                     break
                 except Cancelled:
                     return
@@ -337,7 +344,8 @@ class Download:
             self.downloaded = self.size
             return self.target
 
-        self.final_url, size, ranges = resolve(self.url)
+        self.mirrors, size, ranges = resolve(self.url)
+        self.final_url = self.mirrors[0]
         if size:
             self.size = size
         if not self.size:
@@ -362,9 +370,15 @@ class Download:
             self._save_state()
             self.status = "downloading"
 
-            nthreads = min(self.connections, max(1, len(self._pending)))
-            threads = [threading.Thread(target=self._worker, daemon=True, name=f"dl{i}")
-                       for i in range(nthreads)]
+            # `connections` e por espelho: o teto de banda e de cada no
+            plan = []
+            for m in range(len(self.mirrors)):
+                rotated = self.mirrors[m:] + self.mirrors[:m]
+                plan.extend([rotated] * self.connections)
+            plan = plan[:max(1, min(len(plan), len(self._pending)))]
+            threads = [threading.Thread(target=self._worker, args=(mir,),
+                                        daemon=True, name=f"dl{i}")
+                       for i, mir in enumerate(plan)]
             for t in threads:
                 t.start()
 

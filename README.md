@@ -13,20 +13,29 @@ Também tem lançador no menu de aplicativos ("PS4 PKG Manager").
 
 ## Por que isso ajuda
 
-O FPKGi baixa com **uma conexão só**. Medido nesta rede:
+O FPKGi baixa com **uma conexão só**, de um servidor só. Medido nesta rede,
+baixando o mesmo arquivo de 43,8 GB:
 
 | | velocidade |
 |---|---|
-| PS4, 1 conexão (o que o FPKGi faz) | ~1,4 Mbps (175 KB/s) |
-| PC, 16 conexões | ~3,0 Mbps (370 KB/s) |
-| PC → PS4 por FTP na LAN | **43 Mbps (5,4 MB/s)** |
+| PS4, 1 conexão (o que o FPKGi faz) | ~1,4 Mbps (0,18 MB/s) |
+| PC, 16 conexões num espelho só | ~3 Mbps (0,38 MB/s) |
+| **PC, 16 conexões em cada um dos 3 espelhos** | **204 Mbps (24,3 MB/s)** |
+| PC → PS4 por FTP na LAN | 43 Mbps (5,4 MB/s) |
 
-O archive.org limita a banda por IP em torno de 3 Mbps — passar de 16 conexões
-não acelera, e dividir entre nós diferentes também não. Então o ganho real não
-é só a velocidade dobrada: é a fila rodar sozinha de madrugada, retomar do ponto
-exato depois de queda, e não prender o console durante horas.
+A diferença entre a segunda e a terceira linha é a coisa mais importante deste
+programa. **O limite de banda do archive.org é por servidor, não por IP.** Um
+único espelho congestionado entrega 0,38 MB/s e faz parecer que existe um teto;
+os mesmos 43,8 GB, distribuídos entre os três espelhos do item, vieram a
+24,3 MB/s. Um jogo de 43,8 GB sai de **31 horas para 23 minutos**.
 
-Um jogo de 7 GB: ~11h no PS4, ~5h aqui. Depois o envio pra LAN leva minutos.
+Por isso o `resolve()` mede todos os espelhos antes de começar e usa todos.
+Nunca confie num único número de velocidade do archive.org: o mesmo servidor
+que dá 0,4 MB/s numa hora dá 27 MB/s em outra.
+
+Com isso a etapa lenta passou a ser a **transferência para o console**: 43,8 GB
+por FTP na LAN levam ~2h15. Ainda assim é tempo de rede local, sem prender o
+console durante o download.
 
 ## Como funciona
 
