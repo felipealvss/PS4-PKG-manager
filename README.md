@@ -9,6 +9,11 @@ A aba **Guia** dentro do programa tem tudo isto em forma de seções expansívei
 com uma checagem ao vivo do ambiente no topo (console, disco, catálogo, rede) —
 cada item diz o que está errado e o que fazer.
 
+**[Diagnóstico do projeto](https://claude.ai/code/artifact/19fcbf89-f0f0-4288-8d2b-d7ef6c2db321)**
+— o histórico completo: o que foi construído, as três conclusões que as medições
+derrubaram pelo caminho e a telemetria real do download de 43,8 GB.
+*(link privado — acessível apenas ao dono do artifact)*
+
 Também tem lançador no menu de aplicativos ("PS4 PKG Manager").
 
 ## Por que isso ajuda
@@ -145,20 +150,21 @@ de sair da pasta `.incomplete`.
 Não há dependências fora da biblioteca padrão do Python 3. O `ffmpeg` é opcional
 e serve só para reduzir as capas.
 
-    git clone git@github.com:felipealvss/PS4-PKG-manager.git ~/ps4pkg-manager
-    ~/ps4pkg-manager/ps4pkg.py serve --open
+    git clone git@github.com:felipealvss/PS4-PKG-manager.git
+    cd PS4-PKG-manager
+    ./ps4pkg.py serve --open
 
 Na primeira execução, vá em **Ajustes** e informe o IP do seu PS4 e a pasta de
 destino. A aba **Guia** tem uma checagem ao vivo que diz o que ainda falta.
 
-Para ter o comando `ps4pkg` no PATH:
+Para ter o comando `ps4pkg` no PATH, de dentro da pasta do repositório:
 
-    printf '#!/usr/bin/env bash\nexec python3 -u "$HOME/ps4pkg-manager/ps4pkg.py" "$@"\n' \
+    printf '#!/usr/bin/env bash\nexec python3 -u "%s/ps4pkg.py" "$@"\n' "$PWD" \
       > ~/.local/bin/ps4pkg && chmod +x ~/.local/bin/ps4pkg
 
 ## Onde ficam as coisas
 
-    ~/ps4pkg-manager/                          código
+    <pasta do repositório>/                    código
     <pasta de destino>/                        downloads (definida em Ajustes)
       └── .incomplete/                         parciais + estado de retomada
     ~/.local/share/ps4pkg/
