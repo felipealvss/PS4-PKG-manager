@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PS4 PKG Manager</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --line:#2a323d;
+    --fg:#e6edf3; --dim:#8b949e; --accent:#3b82f6; --ok:#2ea043;
+    --warn:#d29922; --err:#f85149;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{position:sticky;top:0;z-index:10;background:var(--panel);
+         border-bottom:1px solid var(--line);padding:10px 16px}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.2px}
+  .stats{margin-left:auto;display:flex;gap:16px;color:var(--dim);font-size:12px;flex-wrap:wrap}
+  .stats b{color:var(--fg);font-weight:600}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+  .dot.on{background:var(--ok)} .dot.off{background:var(--err)}
+  nav{display:flex;gap:4px;margin-top:10px}
+  nav button{background:none;border:0;color:var(--dim);padding:7px 14px;
+             border-radius:6px;cursor:pointer;font-size:13px}
+  nav button.sel{background:var(--panel2);color:var(--fg)}
+  nav button .badge{background:var(--accent);color:#fff;border-radius:9px;
+        padding:0 6px;font-size:11px;margin-left:6px}
+  main{padding:16px;max-width:1500px;margin:0 auto}
+  input,select,button.act{background:var(--panel2);border:1px solid var(--line);
+        color:var(--fg);padding:7px 10px;border-radius:6px;font-size:13px;font-family:inherit}
+  input:focus,select:focus{outline:1px solid var(--accent)}
+  input[type=search]{min-width:260px;flex:1;max-width:420px}
+  button.act{cursor:pointer}
+  button.act:hover{border-color:var(--accent)}
+  button.act.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.act.danger:hover{border-color:var(--err);color:var(--err)}
+  button.act:disabled{opacity:.45;cursor:not-allowed}
+  .grid{display:grid;gap:12px;margin-top:14px;
+        grid-template-columns:repeat(auto-fill,minmax(168px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+        overflow:hidden;display:flex;flex-direction:column}
+  .card .thumb{aspect-ratio:1;background:var(--panel2);position:relative}
+  .card .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .card .body{padding:8px 10px 10px;display:flex;flex-direction:column;gap:5px;flex:1}
+  .card .nm{font-size:13px;font-weight:600;line-height:1.3;
+        display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .card .meta{color:var(--dim);font-size:11px;display:flex;gap:8px;flex-wrap:wrap}
+  .card .act-row{margin-top:auto;padding-top:6px}
+  .card button{width:100%}
+  .tag{position:absolute;top:6px;left:6px;background:#000a;padding:2px 6px;
+       border-radius:4px;font-size:10px;letter-spacing:.4px}
+  .have{position:absolute;top:6px;right:6px;background:var(--ok);color:#fff;
+        padding:2px 6px;border-radius:4px;font-size:10px}
+  .have.gone{background:var(--err)}
+  .card.off{opacity:.5}
+  table{width:100%;border-collapse:collapse;margin-top:12px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);font-size:13px}
+  th{color:var(--dim);font-weight:500;font-size:12px}
+  .bar{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;min-width:130px}
+  .bar>i{display:block;height:100%;background:var(--accent);transition:width .4s}
+  .bar.done>i{background:var(--ok)} .bar.err>i{background:var(--err)}
+  .st{font-size:11px;padding:2px 7px;border-radius:4px;background:var(--panel2);color:var(--dim)}
+  .st.downloading,.st.transferring{background:#12325e;color:#7ab8ff}
+  .st.done{background:#12341c;color:#6fdc8c}
+  .st.error{background:#3d1618;color:#ff9492}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+         padding:16px;margin-top:14px}
+  .panel h2{margin:0 0 6px;font-size:14px}
+  .panel p{margin:0 0 12px;color:var(--dim);font-size:13px;max-width:75ch}
+  code{background:var(--panel2);padding:2px 6px;border-radius:4px;font-size:12px}
+  .muted{color:var(--dim)}
+  .empty{padding:50px 20px;text-align:center;color:var(--dim)}
+  .pager{display:flex;gap:8px;align-items:center;justify-content:center;margin:18px 0}
+  #toast{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:50}
+  #toast div{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--accent);
+        padding:10px 14px;border-radius:6px;font-size:13px;max-width:380px}
+  #toast div.err{border-left-color:var(--err)}
+  [hidden]{display:none!important}
+  /* --- Guia --- */
+  .guia{max-width:960px}
+  .acc{border:1px solid var(--line);border-radius:8px;background:var(--panel);
+       margin-bottom:8px;overflow:hidden}
+  .acc>summary{cursor:pointer;padding:12px 14px;font-weight:600;font-size:14px;
+       display:flex;align-items:center;gap:10px;list-style:none;user-select:none}
+  .acc>summary::-webkit-details-marker{display:none}
+  .acc>summary::before{content:'▸';color:var(--dim);font-size:12px;
+       transition:transform .15s;display:inline-block;width:10px}
+  .acc[open]>summary::before{transform:rotate(90deg)}
+  .acc>summary:hover{background:var(--panel2)}
+  .acc[open]>summary{border-bottom:1px solid var(--line)}
+  .acc .body{padding:14px}
+  .acc .tease{margin-left:auto;color:var(--dim);font-weight:400;font-size:12px;
+       text-align:right}
+  .acc .tease .bad{color:var(--err)} .acc .tease .warn{color:var(--warn)}
+  .acc .tease .ok{color:var(--ok)}
+  .guia h2{font-size:15px;margin:26px 0 10px;padding-bottom:6px;
+           border-bottom:1px solid var(--line)}
+  .guia h2:first-child{margin-top:0}
+  .guia p{color:var(--dim);max-width:78ch;margin:0 0 12px}
+  .guia ol,.guia ul{color:var(--dim);max-width:78ch;padding-left:20px;margin:0 0 12px}
+  .guia li{margin-bottom:7px}
+  .guia b,.guia strong{color:var(--fg)}
+  .chk{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);
+       align-items:flex-start}
+  .chk:last-child{border-bottom:0}
+  .chk .ic{flex:0 0 18px;text-align:center;font-size:13px;line-height:1.5}
+  .chk.ok .ic{color:var(--ok)} .chk.bad .ic{color:var(--err)}
+  .chk.warn .ic{color:var(--warn)} .chk.na .ic{color:var(--dim)}
+  .chk .txt{flex:1;min-width:0}
+  .chk .lb{font-weight:600;font-size:13px}
+  .chk .dt{color:var(--dim);font-size:12px;word-break:break-word}
+  .chk .hint{color:var(--warn);font-size:12px;margin-top:3px}
+  .flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:4px 0 14px}
+  .flow .box{flex:1;min-width:170px;background:var(--panel);border:1px solid var(--line);
+             border-radius:8px;padding:12px}
+  .flow .box .t{font-weight:600;font-size:13px;margin-bottom:4px}
+  .flow .box .v{font-size:20px;font-weight:600;color:var(--accent)}
+  .flow .box .s{color:var(--dim);font-size:11.5px;margin-top:3px}
+  .flow .ar{display:flex;align-items:center;color:var(--dim);padding:0 10px;font-size:18px}
+  .guia table{margin:0 0 14px}
+  .guia td{vertical-align:top}
+  .guia td.k{white-space:nowrap;color:var(--fg);font-weight:500}
+  .guia code{white-space:nowrap}
+  .banner{border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px;
+          border:1px solid var(--line);background:var(--panel)}
+  .banner.good{border-left:3px solid var(--ok)}
+  .banner.bad{border-left:3px solid var(--err)}
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <h1>PS4 PKG Manager</h1>
+    <div class="stats">
+      <span><span id="ps4dot" class="dot off"></span>PS4 <b id="ps4st">…</b></span>
+      <span>livre <b id="free">…</b></span>
+      <span>catálogo <b id="ccount">…</b></span>
+      <span>biblioteca <b id="lcount">…</b></span>
+      <span id="unavwrap" hidden>bloqueados <b id="unav">0</b></span>
+    </div>
+  </div>
+  <nav>
+    <button data-tab="cat" class="sel">Catálogo</button>
+    <button data-tab="queue">Fila<span class="badge" id="qbadge" hidden>0</span></button>
+    <button data-tab="lib">Biblioteca</button>
+    <button data-tab="ps4">PS4</button>
+    <button data-tab="cfg">Ajustes</button>
+    <button data-tab="guia">Guia</button>
+  </nav>
+</header>
+
+<main>
+  <!-- CATALOGO -->
+  <section id="tab-cat">
+    <div class="row">
+      <input type="search" id="q" placeholder="buscar por nome ou Title ID…" autocomplete="off">
+      <select id="region"><option value="">todas as regiões</option></select>
+      <select id="kind"><option value="">todos os tipos</option></select>
+      <select id="sort">
+        <option value="name">nome A→Z</option>
+        <option value="size">menor primeiro</option>
+        <option value="size:1">maior primeiro</option>
+        <option value="region">região</option>
+      </select>
+      <label class="muted" style="display:flex;gap:6px;align-items:center;cursor:pointer">
+        <input type="checkbox" id="avail" style="width:auto;min-width:0"> só disponíveis</label>
+      <button class="act" id="refresh">Atualizar catálogo</button>
+      <button class="act" id="recheck" title="Revalida quais itens o archive.org ainda serve">Revalidar</button>
+      <span class="muted" id="total"></span>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="pager" id="pager"></div>
+  </section>
+
+  <!-- FILA -->
+  <section id="tab-queue" hidden>
+    <div class="row">
+      <button class="act danger" id="clearq">Limpar concluídos</button>
+      <span class="muted">Downloads retomam do ponto onde pararam, mesmo depois de fechar o programa.</span>
+    </div>
+    <div id="queue"></div>
+  </section>
+
+  <!-- BIBLIOTECA -->
+  <section id="tab-lib" hidden>
+    <div class="row">
+      <label class="muted">Destino no console</label>
+      <select id="dest"></select>
+      <label class="muted" style="display:flex;gap:6px;align-items:center;cursor:pointer">
+        <input type="checkbox" id="delafter" style="width:auto;min-width:0">
+        apagar a cópia local após confirmar</label>
+      <span class="muted">A transferência retoma de onde parou e confere o tamanho no console.</span>
+    </div>
+    <div id="lib"></div>
+  </section>
+
+  <!-- PS4 -->
+  <section id="tab-ps4" hidden>
+    <div class="panel">
+      <h2>Apontar o FPKGi para este PC</h2>
+      <p>Troca a URL de catálogo do FPKGi pela deste computador. O console passa a
+         enxergar só o que você já baixou, e instala pela rede local em vez da internet.
+         O <code>config.json</code> original é salvo em backup antes de qualquer alteração.</p>
+      <div class="row">
+        <button class="act primary" id="link">Apontar FPKGi para cá</button>
+        <button class="act" id="unlink">Restaurar config original</button>
+        <span class="muted">este PC: <code id="lanurl">…</code></span>
+      </div>
+      <div id="backups" class="muted" style="margin-top:12px"></div>
+    </div>
+    <div class="panel">
+      <h2>Transferência para o destino final</h2>
+      <p>Alternativa: mandar o <code>.pkg</code> direto pra uma pasta do console.
+         A transferência retoma de onde parou se cair no meio e confere o tamanho
+         no console antes de dar por concluída. Escolha o destino na aba
+         <b>Biblioteca</b>; os destinos são editáveis em <b>Ajustes</b>.</p>
+      <div id="updir" class="muted"></div>
+    </div>
+  </section>
+
+  <!-- GUIA -->
+  <section id="tab-guia" hidden>
+   <div class="guia">
+    <details class="acc" data-acc="env" open>
+      <summary>Estado do ambiente <span class="tease" id="teaseenv">verificando…</span></summary>
+      <div class="body">
+        <div id="envbanner"></div>
+        <div id="envchecks"></div>
+        <button class="act" id="recheckenv" style="margin-top:12px">Verificar de novo</button>
+      </div>
+    </details>
+
+    <details class="acc" data-acc="prem">
+      <summary>Premissas <span class="tease">o que precisa ser verdade</span></summary>
+      <div class="body">
+        <p>A checagem acima testa cada um destes pontos de verdade — não é lista de desejos.</p>
+        <ul>
+          <li><b>PS4 com GoldHEN e o servidor FTP ligado</b> (porta 2121). É por ele que
+              o programa lê o catálogo do FPKGi e transfere os pacotes.</li>
+          <li><b>PS4 e PC na mesma rede local.</b> A transferência anda a ~43 Mbps aqui;
+              a internet, a ~3.</li>
+          <li><b>Disco de destino montado.</b> Se o disco externo não estiver montado,
+              o download não tem onde cair.</li>
+          <li><b>O servidor precisa estar rodando</b> (<code>ps4pkg serve</code>) enquanto
+              você usa o FPKGi apontado para cá — o console busca o catálogo e os
+              arquivos neste PC em tempo real.</li>
+          <li><b>Sem dependências externas.</b> Só a biblioteca padrão do Python.
+              O <code>ffmpeg</code> é opcional e serve apenas para reduzir as capas.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="acc" data-acc="how">
+      <summary>Como funciona <span class="tease">e por que vale a pena</span></summary>
+      <div class="body">
+        <p>O FPKGi não guarda a lista de jogos dentro do <code>.pkg</code>: ele busca
+           JSONs na web em tempo de execução, e as URLs estão no <code>config.json</code>
+           do console. Este programa lê esse config por FTP, baixa os mesmos catálogos
+           e trabalha em cima deles.</p>
+        <div class="flow">
+          <div class="box"><div class="t">archive.org → PC</div><div class="v">~3 Mbps</div>
+            <div class="s">16 conexões. O limite é por IP: mais conexões não aceleram.</div></div>
+          <div class="ar">→</div>
+          <div class="box"><div class="t">PC → PS4 (LAN)</div><div class="v">~43 Mbps</div>
+            <div class="s">5,4 MB/s medidos. Minutos, não horas.</div></div>
+        </div>
+        <p>Para comparação, o FPKGi baixando sozinho no console usa <b>uma conexão só</b>:
+           ~1,4 Mbps. Um jogo de 7 GB leva ~11h lá e ~5h aqui. <b>O ganho principal não é
+           a velocidade</b> — é a fila rodar sozinha de madrugada, retomar sozinha depois
+           de queda, e não prender o console.</p>
+      </div>
+    </details>
+
+    <details class="acc" data-acc="use">
+      <summary>Uso no dia a dia <span class="tease">buscar → baixar → transferir</span></summary>
+      <div class="body">
+        <ol>
+          <li><b>Catálogo</b> — busque por nome ou Title ID. Marque <b>só disponíveis</b>
+              para esconder o que o archive.org bloqueou.</li>
+          <li><b>Baixar</b> — o item entra na fila. Um de cada vez por padrão, porque
+              downloads simultâneos apenas dividem o mesmo teto de 3 Mbps.</li>
+          <li><b>Fila</b> — progresso, velocidade e tempo restante. Pode fechar o
+              programa: ao reabrir, retoma do ponto exato.</li>
+          <li><b>Biblioteca</b> — escolha o destino no console e clique em
+              <b>Transferir</b>.</li>
+        </ol>
+      </div>
+    </details>
+
+    <details class="acc" data-acc="ps4">
+      <summary>Levar para o console <span class="tease">três caminhos</span></summary>
+      <div class="body">
+        <ol>
+          <li><b>Transferir</b> (aba Biblioteca) — manda o <code>.pkg</code> para a pasta
+              escolhida. Retoma de onde parou se cair, e confere o tamanho no console
+              antes de dar por concluída. Depois é só instalar pelo Package Installer.</li>
+          <li><b>Apontar o FPKGi para cá</b> (aba PS4) — o PC passa a servir um catálogo
+              com o que você já baixou. O console lista sua biblioteca e instala pela LAN.
+              O <code>config.json</code> original vai para backup antes, e há botão para
+              restaurar. <b>Exige o servidor rodando.</b></li>
+          <li><b>USB</b> — pendrive em exFAT e o Package Installer do GoldHEN.</li>
+        </ol>
+      </div>
+    </details>
+
+    <details class="acc" data-acc="cfg">
+      <summary>Configuração <span class="tease" id="teasecfg"></span></summary>
+      <div class="body">
+        <p>Tudo que aponta para algum lugar é ajustável — não há caminho fixo no código.
+           Valores atuais:</p>
+        <div id="cfgtable"></div>
+        <p>Os valores são validados <b>antes</b> de irem para o disco: um valor inválido
+           é recusado com explicação e não fica gravado pela metade.</p>
+        <p><b>Por que a pasta de destino não aceita endereço FTP:</b> o motor grava com
+           <code>pwrite</code> em offsets arbitrários e pré-aloca o arquivo com
+           <code>ftruncate</code> — é isso que permite 16 conexões e a retomada por
+           pedaço. FTP não tem escrita em offset arbitrário. Baixe local e use
+           <b>Transferir</b>.</p>
+      </div>
+    </details>
+
+    <details class="acc" data-acc="err">
+      <summary>Erros prováveis <span class="tease" id="teaseerr"></span></summary>
+      <div class="body">
+        <table><thead><tr><th style="width:32%">O que aparece</th><th style="width:30%">O que é</th>
+          <th>O que fazer</th></tr></thead><tbody id="errtable"></tbody></table>
+      </div>
+    </details>
+
+    <details class="acc" data-acc="cli">
+      <summary>Linha de comando <span class="tease">para automatizar</span></summary>
+      <div class="body"><table><tbody id="clitable"></tbody></table></div>
+    </details>
+
+    <details class="acc" data-acc="paths">
+      <summary>Onde ficam os arquivos <span class="tease">código, downloads, estado</span></summary>
+      <div class="body"><table><tbody id="pathtable"></tbody></table></div>
+    </details>
+   </div>
+  </section>
+
+  <!-- AJUSTES -->
+  <section id="tab-cfg" hidden>
+    <div class="panel">
+      <h2>Ajustes</h2>
+      <p>O archive.org limita a banda por IP em torno de 3 Mbps. Passar de 16 conexões
+         não acelera, e baixar dois jogos ao mesmo tempo só divide o mesmo teto.</p>
+      <div id="cfg"></div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = async (p, body) => {
+  const r = await fetch(p, body ? {method:'POST', headers:{'Content-Type':'application/json'},
+                                   body:JSON.stringify(body)} : undefined);
+  const j = await r.json().catch(() => ({error:'resposta inválida'}));
+  if (j.error) throw new Error(j.error);
+  return j;
+};
+const human = n => {
+  n = Number(n||0);
+  const u = ['B','KB','MB','GB','TB']; let i = 0;
+  while (n >= 1024 && i < 4) { n /= 1024; i++; }
+  return (i ? n.toFixed(1) : n|0) + ' ' + u[i];
+};
+const eta = s => {
+  if (s == null) return '';
+  const h = s/3600|0, m = (s%3600)/60|0;
+  return h ? `${h}h${String(m).padStart(2,'0')}` : (m ? `${m}min` : `${s}s`);
+};
+const toast = (msg, err) => {
+  const d = document.createElement('div');
+  d.textContent = msg; if (err) d.className = 'err';
+  $('#toast').append(d); setTimeout(() => d.remove(), 5000);
+};
+
+let state = {page:1, tab:'cat', settings:{}};
+
+/* ---------- navegação ---------- */
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('sel', x === b));
+  ['cat','queue','lib','ps4','cfg','guia'].forEach(t => $('#tab-'+t).hidden = t !== b.dataset.tab);
+  state.tab = b.dataset.tab;
+  if (state.tab === 'lib') loadLib();
+  if (state.tab === 'cfg') renderCfg();
+  if (state.tab === 'guia') loadGuia();
+});
+
+/* ---------- catálogo ---------- */
+let searchTimer;
+const onFilter = () => { clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { state.page = 1; loadCat(); }, 250); };
+['#q','#region','#kind','#sort','#avail'].forEach(s => $(s).oninput = onFilter);
+
+async function loadCat() {
+  const sort = $('#sort').value.split(':');
+  const p = new URLSearchParams({q:$('#q').value, region:$('#region').value,
+    kind:$('#kind').value, sort:sort[0], desc:sort[1]||'', page:state.page, per:60,
+    avail:$('#avail').checked ? '1' : ''});
+  let d;
+  try { d = await api('/api/catalog?' + p); } catch (e) { return toast(e.message, true); }
+
+  if ($('#region').children.length === 1)
+    d.regions.forEach(r => $('#region').append(new Option(r, r)));
+  if ($('#kind').children.length === 1)
+    d.kinds.forEach(k => $('#kind').append(new Option(k, k)));
+
+  $('#total').textContent = `${d.total} resultado(s)`;
+  $('#ccount').textContent = d.catalog.count;
+
+  const g = $('#grid');
+  g.innerHTML = '';
+  if (!d.items.length) {
+    g.innerHTML = '<div class="empty">Nada encontrado.</div>';
+  }
+  for (const it of d.items) {
+    const c = document.createElement('div');
+    c.className = 'card' + (it.available === false ? ' off' : '');
+    c.innerHTML = `
+      <div class="thumb">
+        ${it.cover_url ? `<img loading="lazy" src="/api/cover?u=${encodeURIComponent(it.cover_url)}"
+             onerror="this.remove()">` : ''}
+        <span class="tag">${it.region||'—'}</span>
+        ${it.downloaded ? '<span class="have">baixado</span>' :
+          it.available === false ? '<span class="have gone">indisponível</span>' : ''}
+      </div>
+      <div class="body">
+        <div class="nm" title="${it.name.replace(/"/g,'&quot;')}">${it.name}</div>
+        <div class="meta"><span>${it.title_id}</span><span>${human(it.size)}</span></div>
+        <div class="meta"><span>v${it.version||'—'}</span><span>FW ${it.min_fw||'—'}</span></div>
+        <div class="act-row"><button class="act ${it.downloaded||it.available===false?'':'primary'}"
+          ${it.available === false ? 'disabled title="O archive.org bloqueou este item"' : ''}>
+          ${it.available === false ? 'Bloqueado no servidor'
+            : it.downloaded ? 'Baixar de novo' : 'Baixar'}</button></div>
+      </div>`;
+    c.querySelector('button').onclick = async ev => {
+      ev.target.disabled = true;
+      try { await api('/api/queue/add', {item:it}); toast('Na fila: ' + it.name); poll(); }
+      catch (e) { toast(e.message, true); ev.target.disabled = false; }
+    };
+    g.append(c);
+  }
+
+  const pages = Math.max(1, Math.ceil(d.total / d.per));
+  $('#pager').innerHTML = '';
+  if (pages > 1) {
+    const mk = (t, pg, dis) => { const b = document.createElement('button');
+      b.className = 'act'; b.textContent = t; b.disabled = dis;
+      b.onclick = () => { state.page = pg; loadCat(); window.scrollTo(0,0); };
+      $('#pager').append(b); };
+    mk('‹ anterior', state.page-1, state.page <= 1);
+    const s = document.createElement('span');
+    s.className = 'muted'; s.textContent = `${state.page} / ${pages}`;
+    $('#pager').append(s);
+    mk('próxima ›', state.page+1, state.page >= pages);
+  }
+}
+
+$('#refresh').onclick = async e => {
+  e.target.disabled = true; e.target.textContent = 'Atualizando…';
+  try { await api('/api/refresh', {}); toast('Catálogo atualizado'); await loadCat(); }
+  catch (err) { toast(err.message, true); }
+  e.target.disabled = false; e.target.textContent = 'Atualizar catálogo';
+};
+
+$('#recheck').onclick = async e => {
+  e.target.disabled = true; e.target.textContent = 'Verificando…';
+  try { const r = await api('/api/recheck', {});
+        toast(`${r.ok_items}/${r.total_items} itens acessíveis` +
+              (r.blocked.length ? ` — bloqueados: ${r.blocked.join(', ')}` : ''));
+        await loadCat(); await loadStatus(); }
+  catch (err) { toast(err.message, true); }
+  e.target.disabled = false; e.target.textContent = 'Revalidar';
+};
+
+/* ---------- fila ---------- */
+function renderQueue(jobs) {
+  const act = jobs.filter(j => ['queued','downloading','transferring'].includes(j.status));
+  $('#qbadge').hidden = !act.length;
+  $('#qbadge').textContent = act.length;
+  if (state.tab !== 'queue') return;
+  if (!jobs.length) { $('#queue').innerHTML = '<div class="empty">A fila está vazia.</div>'; return; }
+  const rows = jobs.map(j => {
+    const p = j.progress || {};
+    const cls = j.status === 'done' ? 'done' : j.status === 'error' ? 'err' : '';
+    const speed = ['downloading','transferring'].includes(j.status)
+      ? `${human(p.speed)}/s${p.eta != null ? ' · falta ' + eta(p.eta) : ''}` : '';
+    const btn = (a, t, c='') =>
+      `<button class="act ${c}" data-j="${j.id}" data-a="${a}">${t}</button>`;
+    const actions = j.status === 'done' ? btn('remove','Remover')
+      : ['queued','downloading','transferring'].includes(j.status) ? btn('cancel','Cancelar','danger')
+      : btn('retry','Tentar de novo','') + ' ' + btn('remove','Remover','danger');
+    return `<tr>
+      <td style="width:34%">${j.name}<div class="muted" style="font-size:11px">
+        ${j.type === 'transfer'
+            ? '→ ' + (j.dest_name || j.remote_dir || 'PS4') +
+              (j.progress && j.progress.resumed_from
+                 ? ` · retomado em ${human(j.progress.resumed_from)}` : '')
+            : j.title_id || ''}</div></td>
+      <td><span class="st ${j.status}">${j.status}</span></td>
+      <td style="width:22%"><div class="bar ${cls}"><i style="width:${p.percent||0}%"></i></div>
+        <div class="muted" style="font-size:11px">${human(p.downloaded)} / ${human(p.size)}</div></td>
+      <td style="width:15%">${speed}</td>
+      <td class="muted" style="font-size:11px">${j.error||''}</td>
+      <td style="text-align:right;white-space:nowrap">${actions}</td></tr>`;
+  }).join('');
+  $('#queue').innerHTML = `<table><thead><tr><th>Item</th><th>Estado</th>
+    <th>Progresso</th><th>Velocidade</th><th>Erro</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  $('#queue').querySelectorAll('button[data-a]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await api(`/api/queue/${b.dataset.j}/${b.dataset.a}`,
+                    {delete_partial:b.dataset.a === 'remove'}); poll(); }
+    catch (e) { toast(e.message, true); b.disabled = false; }
+  });
+}
+$('#clearq').onclick = async () => { await api('/api/queue/clear', {}); poll(); };
+
+/* ---------- biblioteca ---------- */
+async function loadLib() {
+  let d; try { d = await api('/api/library'); } catch (e) { return toast(e.message, true); }
+  if (!d.files.length && !d.partials.length) {
+    $('#lib').innerHTML = '<div class="empty">Nada baixado ainda.</div>'; return;
+  }
+  const rows = d.files.map(f => `<tr>
+      <td>${f.filename}</td>
+      <td style="width:110px">${human(f.size)}</td>
+      <td style="width:150px" class="muted">${new Date(f.mtime*1000).toLocaleString('pt-BR')}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="act" data-push="${encodeURIComponent(f.filename)}">Transferir</button>
+        <button class="act danger" data-del="${encodeURIComponent(f.filename)}">Excluir</button>
+      </td></tr>`).join('');
+  const parts = d.partials.map(p => `<tr class="muted">
+      <td>${p.filename}</td><td>${human(p.downloaded)} / ${human(p.size)}</td>
+      <td colspan="2">${p.percent}% — incompleto, retoma daqui</td></tr>`).join('');
+  $('#lib').innerHTML = `<table><thead><tr><th>Arquivo</th><th>Tamanho</th>
+    <th>Baixado em</th><th></th></tr></thead><tbody>${rows}${parts}</tbody></table>`;
+  $('#lib').querySelectorAll('[data-push]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { const r = await api('/api/library/transfer', {
+            filename: decodeURIComponent(b.dataset.push),
+            dest: $('#dest').value,
+            delete_after: $('#delafter').checked });
+          toast(r.new ? `Transferindo para ${r.dest_name}` : 'Já estava na fila'); poll(); }
+    catch (e) { toast(e.message, true); b.disabled = false; }
+  });
+  $('#lib').querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    const n = decodeURIComponent(b.dataset.del);
+    if (!confirm('Excluir ' + n + ' do PC?')) return;
+    try { await api('/api/library/delete', {filename:n}); loadLib(); poll(); }
+    catch (e) { toast(e.message, true); }
+  });
+}
+
+/* ---------- PS4 ---------- */
+$('#link').onclick = async e => {
+  if (!confirm('Trocar a URL de catálogo do FPKGi pela deste PC?\n' +
+               'O config atual será salvo em backup.')) return;
+  e.target.disabled = true;
+  try { const r = await api('/api/ps4/point', {kinds:['games']});
+        toast('FPKGi apontado pra cá. Backup: ' + r.backup); loadBackups(); }
+  catch (err) { toast(err.message, true); }
+  e.target.disabled = false;
+};
+$('#unlink').onclick = async () => {
+  const b = await api('/api/ps4/backups');
+  if (!b.backups.length) return toast('Nenhum backup disponível', true);
+  try { await api('/api/ps4/restore', {backup:b.backups[0]}); toast('Config original restaurado'); }
+  catch (e) { toast(e.message, true); }
+};
+async function loadBackups() {
+  const b = await api('/api/ps4/backups').catch(() => ({backups:[]}));
+  $('#backups').textContent = b.backups.length
+    ? `${b.backups.length} backup(s) salvos — mais recente: ${b.backups[0]}` : 'Nenhum backup ainda.';
+}
+
+/* ---------- ajustes ---------- */
+const CFG_FIELDS = [
+  ['sec', 'Download'],
+  ['connections','Conexões por download','number'],
+  ['parallel_jobs','Downloads simultâneos','number'],
+  ['chunk_mb','Tamanho do pedaço (MB)','number'],
+  ['dest','Pasta de destino (neste PC)','text'],
+  ['sec', 'Console'],
+  ['ps4_host','IP do PS4','text'],
+  ['ps4_ftp_port','Porta FTP','number'],
+  ['ps4_fpkgi_dir','Pasta do FPKGi no console','text'],
+  ['ps4_destinations','Destinos de transferência','textarea'],
+  ['ps4_default_destination','Destino padrão','select'],
+  ['delete_after_transfer','Apagar cópia local após transferir','check'],
+];
+
+function renderCfg() {
+  const s = state.settings;
+  const val = k => {
+    if (k === 'ps4_destinations')
+      return (s[k]||[]).map(d => `${d.name} = ${d.path}`).join('\n');
+    return s[k] ?? '';
+  };
+  $('#cfg').innerHTML = CFG_FIELDS.map(([k,l,t]) => {
+    if (k === 'sec') return `<div style="margin:16px 0 8px;font-weight:600">${l}</div>`;
+    const lab = `<label style="width:230px" class="muted">${l}</label>`;
+    if (t === 'textarea')
+      return `<div class="row" style="margin-bottom:8px;align-items:flex-start">${lab}
+        <textarea id="cfg_${k}" rows="4" style="width:420px;font-family:inherit;background:var(--panel2);
+          border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:7px 10px;font-size:13px"
+          placeholder="Nome = /caminho">${val(k)}</textarea></div>`;
+    if (t === 'check')
+      return `<div class="row" style="margin-bottom:8px">${lab}
+        <input id="cfg_${k}" type="checkbox" style="width:auto;min-width:0" ${s[k]?'checked':''}></div>`;
+    if (t === 'select') {
+      const opts = (s.ps4_destinations||[]).map(d =>
+        `<option value="${d.path}" ${d.path===s[k]?'selected':''}>${d.name} — ${d.path}</option>`).join('');
+      return `<div class="row" style="margin-bottom:8px">${lab}
+        <select id="cfg_${k}" style="width:420px">${opts}</select></div>`;
+    }
+    return `<div class="row" style="margin-bottom:8px">${lab}
+      <input id="cfg_${k}" type="${t}" value="${val(k)}" style="width:420px"></div>`;
+  }).join('') +
+  '<button class="act primary" id="savecfg" style="margin-top:12px">Salvar</button>';
+
+  // o destino padrão precisa existir na lista: reconstrói o select ao editar
+  $('#cfg_ps4_destinations').oninput = () => {
+    const cur = $('#cfg_ps4_default_destination').value;
+    const paths = $('#cfg_ps4_destinations').value.split('\n')
+      .map(l => l.split('=').slice(1).join('=').trim() || l.trim()).filter(Boolean);
+    $('#cfg_ps4_default_destination').innerHTML = paths.map(pt =>
+      `<option value="${pt}" ${pt===cur?'selected':''}>${pt}</option>`).join('');
+  };
+
+  $('#savecfg').onclick = async e => {
+    const body = {};
+    for (const [k,,t] of CFG_FIELDS) {
+      if (k === 'sec') continue;
+      const el = $('#cfg_'+k);
+      body[k] = t === 'number' ? Number(el.value)
+              : t === 'check'  ? el.checked
+              : el.value;
+    }
+    e.target.disabled = true;
+    try {
+      const r = await api('/api/settings', body);
+      state.settings = r.settings;
+      toast('Salvo'); renderCfg(); loadStatus();
+    } catch (err) { toast(err.message, true); }
+    e.target.disabled = false;
+  };
+}
+
+function fillDestinations(dests, def) {
+  const sel = $('#dest');
+  if (!dests || !dests.length) return;
+  const cur = sel.value;
+  sel.innerHTML = dests.map(d =>
+    `<option value="${d.path}">${d.name} — ${d.path}</option>`).join('');
+  sel.value = dests.some(d => d.path === cur) ? cur : (def || dests[0].path);
+}
+
+/* ---------- guia ---------- */
+const ERRORS = [
+  ['pacote indisponível no archive.org (item bloqueado)',
+   'O archive.org tirou o item do ar. Todos os espelhos respondem 401/403 — o metadata ainda lista o arquivo, mas o download é negado.',
+   'Não há contorno: é decisão da origem. Marque <b>só disponíveis</b> no Catálogo para escondê-los, e use <b>Revalidar</b> de vez em quando — isso muda com o tempo.'],
+  ['nenhum espelho respondeu',
+   'Sem rede, ou o archive.org fora do ar no momento.',
+   'Confira a internet e use <b>Tentar de novo</b> na Fila. Nada do que já foi baixado se perde.'],
+  ['N pedaço(s) falharam após várias tentativas',
+   'Conexão instável. Cada pedaço já foi tentado 7 vezes com espera progressiva antes de desistir.',
+   '<b>Tentar de novo</b> na Fila. Retoma do ponto exato, inclusive no meio de um pedaço.'],
+  ['não parece um PKG de PS4 (assinatura …)',
+   'O servidor devolveu uma página de erro em vez do arquivo. A conferência da assinatura <code>\\x7fCNT</code> pegou antes de virar arquivo bom.',
+   'O download é descartado de propósito. Tente mais tarde ou escolha outra versão.'],
+  ['transferência incompleta: X de Y bytes no console',
+   'A transferência caiu perto do fim, ou o PS4 ficou sem espaço.',
+   'Transfira de novo — retoma do offset. Confira o espaço livre no console.'],
+  ['Console offline / PS4 offline no cabeçalho',
+   'O servidor FTP do GoldHEN não está no ar: console desligado ou suspenso, GoldHEN não carregado, ou o IP mudou.',
+   'Ative o servidor FTP nas opções do GoldHEN e confira o <b>IP do PS4</b> em Ajustes.'],
+  ['Catálogo com 0 itens',
+   'Não deu para ler o <code>config.json</code> do console e não há fonte alternativa configurada.',
+   'Ligue o console, ou preencha <code>extra_sources</code> no <code>settings.json</code> para trabalhar sem ele.'],
+  ["'…' é uma URL, não uma pasta local",
+   'Um endereço FTP foi digitado na pasta de destino dos downloads.',
+   'Downloads precisam de disco local. Para mandar ao console, use <b>Transferir</b> na Biblioteca.'],
+  ['Address already in use (ao iniciar)',
+   'Já existe um servidor rodando na porta 8420.',
+   'Use o que está no ar, ou encerre o processo antigo antes de abrir outro.'],
+  ['Capas em branco na grade',
+   'O cache ainda está sendo aquecido — cada capa original tem ~440 KB e vem do mesmo servidor lento.',
+   'Normal no primeiro acesso a cada página. Depois de cacheadas ficam instantâneas.'],
+  ['FPKGi não mostra nada depois de "Apontar para cá"',
+   'O servidor deste PC não está rodando, ou a biblioteca local está vazia.',
+   'Deixe o <code>ps4pkg serve</code> aberto. O catálogo local só lista o que você <b>já baixou</b>.'],
+];
+
+const CLI = [
+  ['ps4pkg serve --open', 'sobe a interface e abre o navegador'],
+  ['ps4pkg status', 'resumo do ambiente'],
+  ['ps4pkg search hollow knight', 'busca no catálogo'],
+  ['ps4pkg get downwell', 'enfileira e baixa'],
+  ['ps4pkg queue --watch', 'acompanha a fila'],
+  ['ps4pkg library', 'o que já está no disco'],
+  ['ps4pkg dests', 'destinos configurados no console'],
+  ['ps4pkg push "jogo.pkg"', 'transfere para o destino padrão'],
+  ['ps4pkg push "jogo.pkg" --dest /data/pkg', 'transfere para outro destino'],
+  ['ps4pkg refresh', 'rebaixa os catálogos'],
+  ['ps4pkg link / unlink', 'aponta o FPKGi para cá / restaura o original'],
+];
+
+const CFG_HELP = {
+  connections: ['Conexões por download', 'Acima de 16 não adianta: o teto é do archive.org, por IP.'],
+  parallel_jobs: ['Downloads simultâneos', 'Dois ao mesmo tempo apenas dividem o mesmo teto.'],
+  chunk_mb: ['Tamanho do pedaço', 'Unidade de retomada. Menor perde menos numa queda, mas gera mais estado.'],
+  dest: ['Pasta de destino (neste PC)', 'Precisa ser disco local. Recusa URL.'],
+  ps4_host: ['IP do PS4', 'Mude aqui se o console trocar de IP.'],
+  ps4_ftp_port: ['Porta FTP', 'Padrão do GoldHEN: 2121.'],
+  ps4_fpkgi_dir: ['Pasta do FPKGi no console', 'O <code>config.json</code> é derivado daqui. Se o FPKGi mudar de lugar, é o único campo a corrigir.'],
+  ps4_default_destination: ['Destino padrão', 'Vem pré-selecionado na Biblioteca.'],
+  delete_after_transfer: ['Apagar cópia local', 'Só apaga depois que o console confirma o tamanho.'],
+  catalog_ttl_hours: ['Validade do catálogo', 'Horas até rebaixar os JSONs automaticamente.'],
+};
+
+async function loadGuia() {
+  let d;
+  $('#envchecks').innerHTML = '<div class="muted">verificando…</div>';
+  try { d = await api('/api/preflight'); }
+  catch (e) { $('#envchecks').innerHTML = `<div class="muted">falhou: ${e.message}</div>`; return; }
+
+  const bad  = d.checks.filter(c => c.ok === false && c.critical).length;
+  const warn = d.checks.filter(c => c.ok === false && !c.critical).length;
+  const good = d.checks.filter(c => c.ok === true).length;
+  $('#teaseenv').innerHTML = bad
+    ? `<span class="bad">${bad} pendência${bad>1?'s':''}</span>`
+    : `<span class="ok">${good} ok</span>` + (warn ? ` · <span class="warn">${warn} aviso${warn>1?'s':''}</span>` : '');
+
+  $('#envbanner').innerHTML = d.ready
+    ? `<div class="banner good">Ambiente pronto. ${d.checks.filter(c=>c.ok===false).length
+        ? 'Há avisos não bloqueantes abaixo.' : 'Nenhum problema encontrado.'}</div>`
+    : `<div class="banner bad"><b>Falta resolver:</b> ${d.blockers.join(' · ')}</div>`;
+
+  $('#envchecks').innerHTML = d.checks.map(c => {
+    const cls = c.ok === true ? 'ok' : c.ok === false ? (c.critical ? 'bad' : 'warn') : 'na';
+    const ic  = c.ok === true ? '✓' : c.ok === false ? (c.critical ? '✕' : '!') : '–';
+    return `<div class="chk ${cls}"><div class="ic">${ic}</div><div class="txt">
+      <div class="lb">${c.label}</div><div class="dt">${c.detail}</div>
+      ${c.hint ? `<div class="hint">${c.hint}</div>` : ''}</div></div>`;
+  }).join('');
+
+  const s = d.settings;
+  const dests = (s.ps4_destinations||[]).map(x => `${x.name} → ${x.path}`).join('<br>');
+  const rows = Object.entries(CFG_HELP).map(([k,[lab,why]]) => {
+    let v = s[k];
+    if (typeof v === 'boolean') v = v ? 'sim' : 'não';
+    return `<tr><td class="k">${lab}</td><td><code>${v}</code></td>
+            <td class="muted">${why}</td></tr>`;
+  }).join('') +
+  `<tr><td class="k">Destinos no console</td><td><code>${dests}</code></td>
+     <td class="muted">Editáveis em Ajustes, um por linha: <code>Nome = /caminho</code>.</td></tr>
+   <tr><td class="k">Config lido do FPKGi</td><td><code>${d.fpkgi_config}</code></td>
+     <td class="muted">Derivado da pasta acima. Se falhar, cai para <code>extra_sources</code> e segue funcionando.</td></tr>
+   <tr><td class="k">Endereço na rede</td><td><code>${d.lan_url}</code></td>
+     <td class="muted">É este endereço que o console usa.</td></tr>`;
+  $('#cfgtable').innerHTML = `<table><tbody>${rows}</tbody></table>`;
+  $('#teasecfg').textContent = `destino ${s.ps4_default_destination} · ${s.connections} conexões`;
+  $('#teaseerr').textContent = `${ERRORS.length} situações e o que fazer`;
+
+  $('#errtable').innerHTML = ERRORS.map(([m,c,f]) =>
+    `<tr><td class="k" style="white-space:normal"><code style="white-space:normal">${m}</code></td>
+     <td class="muted">${c}</td><td class="muted">${f}</td></tr>`).join('');
+
+  $('#clitable').innerHTML = CLI.map(([c,w]) =>
+    `<tr><td class="k"><code>${c}</code></td><td class="muted">${w}</td></tr>`).join('');
+
+  const P = d.paths;
+  $('#pathtable').innerHTML = [
+    ['Código', P.app],
+    ['Downloads', P.dest],
+    ['Parciais + estado de retomada', P.incomplete],
+    ['Ajustes, catálogo, fila, capas, backups', P.state],
+  ].map(([k,v]) => `<tr><td class="k">${k}</td><td><code>${v}</code></td></tr>`).join('');
+}
+$('#recheckenv').onclick = e => { e.target.disabled = true; loadGuia().finally(() => e.target.disabled = false); };
+
+// o estado de aberto/fechado de cada seção sobrevive ao recarregar
+document.querySelectorAll('details.acc').forEach(el => {
+  const k = 'guia.' + el.dataset.acc;
+  try { const v = localStorage.getItem(k); if (v !== null) el.open = v === '1'; } catch (e) {}
+  el.addEventListener('toggle', () => {
+    try { localStorage.setItem(k, el.open ? '1' : '0'); } catch (e) {}
+  });
+});
+
+/* ---------- polling ---------- */
+async function poll() {
+  try {
+    const q = await api('/api/queue');
+    renderQueue(q.jobs);
+  } catch (e) {}
+}
+async function loadStatus() {
+  try {
+    const s = await api('/api/status');
+    state.settings = s.settings;
+    $('#ps4dot').className = 'dot ' + (s.ps4.online ? 'on' : 'off');
+    $('#ps4st').textContent = s.ps4.online ? 'online' : 'offline';
+    $('#free').textContent = s.disk ? human(s.disk.free) : '—';
+    $('#ccount').textContent = s.catalog.count;
+    $('#lcount').textContent = s.library_count;
+    $('#unavwrap').hidden = !s.unavailable;
+    $('#unav').textContent = s.unavailable || 0;
+    fillDestinations(s.destinations, s.settings.ps4_default_destination);
+    $('#delafter').checked = !!s.settings.delete_after_transfer;
+    $('#lanurl').textContent = s.lan_url;
+    $('#updir').innerHTML = (s.destinations||[]).map(d =>
+      `<div>${d.default ? '★' : '·'} ${d.name} — <code>${d.path}</code></div>`).join('');
+  } catch (e) {}
+}
+
+loadStatus(); loadCat(); poll(); loadBackups();
+setInterval(poll, 1500);
+setInterval(loadStatus, 15000);
+setInterval(() => { if (state.tab === 'lib') loadLib(); }, 10000);
+</script>
+</body>
+</html>
