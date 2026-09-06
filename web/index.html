@@ -78,6 +78,21 @@
         padding:10px 14px;border-radius:6px;font-size:13px;max-width:380px}
   #toast div.err{border-left-color:var(--err)}
   [hidden]{display:none!important}
+  /* --- instalados no console --- */
+  .sechead{display:flex;align-items:baseline;gap:12px;margin:30px 0 4px;flex-wrap:wrap}
+  .sechead h2{font-size:15px;margin:0;font-weight:600}
+  .sechead .sub{color:var(--dim);font-size:12.5px;flex:1}
+  .ico{width:38px;height:38px;border-radius:5px;background:var(--panel2);
+       object-fit:cover;display:block;flex:0 0 38px}
+  .tname{display:flex;gap:11px;align-items:center;min-width:0}
+  .tname .nm{font-weight:500;overflow:hidden;text-overflow:ellipsis}
+  .tname .tid{color:var(--dim);font-size:11px;font-family:ui-monospace,monospace}
+  .org{font-size:11px;padding:2px 8px;border-radius:3px;white-space:nowrap;
+       background:var(--panel2);color:var(--dim)}
+  .org.dusk{background:#2a1f3d;color:#c4a3f0}
+  .org.arch{background:#12325e;color:#7ab8ff}
+  .haslocal{font-size:11px;color:var(--ok)}
+  .nolocal{font-size:11px;color:var(--dim)}
   /* --- Guia --- */
   .guia{max-width:960px}
   .acc{border:1px solid var(--line);border-radius:8px;background:var(--panel);
@@ -194,6 +209,13 @@
       <span class="muted">A transferência retoma de onde parou e confere o tamanho no console.</span>
     </div>
     <div id="lib"></div>
+
+    <div class="sechead">
+      <h2>Instalado no console</h2>
+      <span class="sub" id="instsub"></span>
+      <button class="act" id="instreload">Reler do console</button>
+    </div>
+    <div id="installed"></div>
   </section>
 
   <!-- PS4 -->
@@ -292,7 +314,10 @@
           <li><b>Fila</b> — progresso, velocidade e tempo restante. Pode fechar o
               programa: ao reabrir, retoma do ponto exato.</li>
           <li><b>Biblioteca</b> — escolha o destino no console e clique em
-              <b>Transferir</b>.</li>
+              <b>Transferir</b>. Abaixo dos arquivos locais, a mesma aba lista
+              <b>o que já está instalado no console</b>, com o ícone real de cada
+              título e de onde ele veio (Duskaryon, archive.org, local/USB) —
+              leitura pura, o programa nunca escreve em <code>/user/app</code>.</li>
         </ol>
       </div>
     </details>
@@ -479,7 +504,7 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('sel', x === b));
   ['cat','queue','lib','ps4','cfg','guia'].forEach(t => $('#tab-'+t).hidden = t !== b.dataset.tab);
   state.tab = b.dataset.tab;
-  if (state.tab === 'lib') loadLib();
+  if (state.tab === 'lib') { loadLib(); loadInstalled(); }
   if (state.tab === 'cfg') renderCfg();
   if (state.tab === 'guia') loadGuia();
 });
@@ -648,6 +673,56 @@ async function loadLib() {
     catch (e) { toast(e.message, true); }
   });
 }
+
+/* ---------- instalados no console (somente leitura) ---------- */
+let instLoaded = false;
+async function loadInstalled(force) {
+  const box = $('#installed'), sub = $('#instsub');
+  if (!force && instLoaded) return;
+  box.innerHTML = '<div class="muted" style="padding:10px 0">lendo o console…</div>';
+  let d;
+  try {
+    d = force ? await api('/api/installed/refresh', {}) : await api('/api/installed');
+  } catch (e) { d = {titles: [], error: e.message}; }
+  instLoaded = true;
+
+  if (d.error || !d.titles.length) {
+    sub.textContent = '';
+    box.innerHTML = `<div class="muted" style="padding:10px 0">${
+      d.error ? 'Console indisponível — ' + d.error : 'Nada encontrado no console.'}</div>`;
+    return;
+  }
+  const total = d.titles.reduce((a, t) => a + t.size, 0);
+  sub.textContent = `${d.titles.length} títulos · ${human(total)} ocupados`;
+
+  box.innerHTML = `<table><thead><tr>
+      <th>Título</th><th style="width:100px">Tamanho</th>
+      <th style="width:130px">Instalado de</th><th style="width:150px">Cópia local</th>
+    </tr></thead><tbody>${d.titles.map(t => {
+      const cls = /duskaryon/i.test(t.origin) ? 'dusk'
+                : /archive/i.test(t.origin) ? 'arch' : '';
+      return `<tr>
+        <td><div class="tname">
+          ${t.has_icon ? `<img class="ico" loading="lazy"
+             src="/api/appicon?tid=${encodeURIComponent(t.title_id)}" onerror="this.remove()">`
+            : '<span class="ico"></span>'}
+          <div style="min-width:0">
+            <div class="nm">${t.name}</div>
+            <div class="tid">${t.title_id}</div>
+          </div></div></td>
+        <td>${human(t.size)}</td>
+        <td><span class="org ${cls}">${t.origin}</span></td>
+        <td>${t.local_copy
+              ? '<span class="haslocal">✓ tenho o .pkg</span>'
+              : '<span class="nolocal">—</span>'}</td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+$('#instreload').onclick = async e => {
+  e.target.disabled = true; e.target.textContent = 'Lendo…';
+  await loadInstalled(true);
+  e.target.disabled = false; e.target.textContent = 'Reler do console';
+};
 
 /* ---------- PS4 ---------- */
 $('#link').onclick = async e => {

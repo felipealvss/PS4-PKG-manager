@@ -61,6 +61,18 @@ baixa os mesmos catálogos e trabalha em cima deles. Não precisa extrair o
    manda o `.pkg` pra pasta que você escolher no console. Veja abaixo.
 3. **USB** — pendrive em exFAT e o Package Installer do GoldHEN.
 
+## Biblioteca unificada
+
+A aba Biblioteca mostra os arquivos no PC e, abaixo, **o que já está instalado no
+console** — com o ícone real de cada título, o tamanho ocupado e de onde o pacote
+veio, lido do próprio `app.json` do console: `local / USB`, `Duskaryon`,
+`archive.org`. Também marca quais deles você tem em `.pkg` aqui, casando por
+Title ID.
+
+É estritamente somente leitura: nada nesse caminho escreve em `/user/app`. O
+resultado fica em cache por 10 minutos, carrega só ao abrir a aba e, com o
+console desligado, some com um aviso sem afetar o resto.
+
 ## Transferência para o destino final
 
 Escolha o destino no seletor da aba Biblioteca e clique em **Transferir**. O que

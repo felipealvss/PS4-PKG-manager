@@ -7,6 +7,7 @@ retomar upload interrompido e conferir o tamanho no console depois.
 import ftplib
 import io
 import json
+import re
 import threading
 import time
 from pathlib import Path
@@ -239,6 +240,132 @@ def transfer(local_path, destination=None, on_progress=None, cancel=None,
 
 # alias historico
 upload = transfer
+
+
+# ---------- o que ja esta instalado no console (somente leitura) ----------
+
+APP_DIR = "/user/app"
+APPMETA_DIR = "/user/appmeta"
+# nomes que a pronunciation.xml traz para homebrew feito em Unity: nao sao titulos
+_GENERIC_NAMES = {"unity", "game", "app", "application"}
+
+_installed_cache = {"t": 0.0, "val": None, "key": None}
+_installed_lock = threading.Lock()
+
+
+def _origin_of(app_json):
+    """De onde o pacote veio, segundo o proprio console."""
+    try:
+        piece = (app_json.get("pieces") or [{}])[0]
+        url = piece.get("url") or ""
+        size = int(piece.get("fileSize") or 0)
+    except Exception:
+        return "", 0
+    if url.startswith(("http://", "https://")):
+        return url.split("/")[2], size
+    return ("local" if url else ""), size
+
+
+def _name_from_pronunciation(raw):
+    """A pronunciation.xml guarda o titulo falado -- serve de nome quando o
+    catalogo nao conhece o Title ID."""
+    try:
+        txt = raw.decode("utf-8-sig", "replace")
+    except Exception:
+        return ""
+    m = re.search(r"<text[^>]*>([^<]+)</text>", txt)
+    if not m:
+        return ""
+    name = m.group(1).strip()
+    return "" if name.lower() in _GENERIC_NAMES else name
+
+
+def installed_titles(max_age=600, timeout=45):
+    """Titulos instalados no console.
+
+    Estritamente somente leitura: nada aqui escreve em /user/app. Usa uma unica
+    conexao FTP para todas as leituras e guarda o resultado em cache, porque sao
+    dezenas de arquivos pequenos e a interface consulta com frequencia.
+    """
+    key = (settings["ps4_host"], settings["ps4_ftp_port"])
+    with _installed_lock:
+        c = _installed_cache
+        if c["key"] == key and c["val"] is not None and time.time() - c["t"] < max_age:
+            return c["val"]
+
+    ftp = connect(timeout=timeout)
+    try:
+        def names(path):
+            lines = []
+            try:
+                ftp.retrlines(f"LIST {path}", lines.append)
+            except Exception:
+                return []
+            out = []
+            for ln in lines:
+                parts = ln.split(None, 8)
+                if len(parts) >= 9 and parts[8] not in (".", ".."):
+                    out.append(parts[8])
+            return out
+
+        def read(path):
+            buf = io.BytesIO()
+            try:
+                ftp.retrbinary(f"RETR {path}", buf.write)
+                return buf.getvalue()
+            except Exception:
+                return None
+
+        ids = names(APP_DIR)
+        has_meta = set(names(APPMETA_DIR))
+        out = []
+        for tid in sorted(ids):
+            raw = read(f"{APP_DIR}/{tid}/app.json")
+            host, size = "", 0
+            if raw:
+                try:
+                    host, size = _origin_of(json.loads(raw))
+                except Exception:
+                    pass
+            name = ""
+            if tid in has_meta:
+                pr = read(f"{APPMETA_DIR}/{tid}/pronunciation.xml")
+                if pr:
+                    name = _name_from_pronunciation(pr)
+            out.append({
+                "title_id": tid,
+                "name": name,
+                "size": size,
+                "origin_host": host,
+                "has_icon": tid in has_meta,
+            })
+    finally:
+        _quit(ftp)
+
+    with _installed_lock:
+        _installed_cache.update(t=time.time(), val=out, key=key)
+    return out
+
+
+def invalidate_installed_cache():
+    with _installed_lock:
+        _installed_cache.update(t=0.0, val=None)
+
+
+def read_app_icon(title_id, timeout=30):
+    """icon0.png de um titulo instalado, ou None."""
+    tid = re.sub(r"[^A-Za-z0-9]", "", str(title_id))[:16]
+    if not tid:
+        return None
+    ftp = connect(timeout=timeout)
+    try:
+        buf = io.BytesIO()
+        ftp.retrbinary(f"RETR {APPMETA_DIR}/{tid}/icon0.png", buf.write)
+        return buf.getvalue()
+    except Exception:
+        return None
+    finally:
+        _quit(ftp)
 
 
 # ---------- integracao: fazer o FPKGi apontar pro PC ----------

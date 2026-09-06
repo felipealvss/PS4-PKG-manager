@@ -187,6 +187,99 @@ def warm_covers(items):
         COVER_POOL.submit(job)
 
 
+ORIGIN_LABELS = [
+    ("duskaryon", "Duskaryon"),
+    ("archive.org", "archive.org"),
+]
+
+
+def origin_label(host):
+    """Rotulo curto de onde o pacote veio, segundo o proprio console."""
+    if not host:
+        return "desconhecida"
+    if host == "local":
+        return "local / USB"
+    low = host.lower()
+    for needle, label in ORIGIN_LABELS:
+        if needle in low:
+            return label
+    return host
+
+
+def installed_view():
+    """Titulos instalados, com o melhor nome disponivel.
+
+    O catalogo do FPKGi tem nomes melhores que a pronunciation.xml do console
+    ("Marvel's Spider-Man" contra "spider man"), entao ele vem primeiro.
+    """
+    items = ps4.installed_titles()
+    by_tid = {}
+    for it in get_catalog().get("items", []):
+        by_tid.setdefault(it["title_id"], it)
+    # casar por Title ID, nao por nome de arquivo: um pkg baixado por fora tem
+    # outro nome, mas continua sendo a copia local do mesmo titulo
+    local_tids, local_names = set(), {}
+    for f in library():
+        tid = guess_title_id(f["filename"])
+        if tid:
+            local_tids.add(tid)
+            local_names.setdefault(tid, f["filename"])
+    by_fname = {i["filename"]: i for i in get_catalog().get("items", [])}
+    for f in library():
+        meta = by_fname.get(f["filename"])
+        if meta and meta["title_id"]:
+            local_tids.add(meta["title_id"])
+            local_names.setdefault(meta["title_id"], f["filename"])
+
+    out = []
+    for t in items:
+        meta = by_tid.get(t["title_id"])
+        tid = t["title_id"]
+        out.append({
+            **t,
+            "name": (meta or {}).get("name") or t["name"] or tid,
+            "origin": origin_label(t["origin_host"]),
+            "in_catalog": meta is not None,
+            "local_copy": tid in local_tids,
+            "local_file": local_names.get(tid, ""),
+        })
+    out.sort(key=lambda x: (-x["size"], x["name"].lower()))
+    return out
+
+
+def app_icon_path(title_id):
+    return COVER_DIR / f"app_{title_id}.jpg"
+
+
+def fetch_app_icon(title_id):
+    """icon0.png do console, reduzido. Os originais passam de 400 KB."""
+    cp = app_icon_path(title_id)
+    if cp.exists() and cp.stat().st_size:
+        return cp
+    with _cover_lock("app:" + title_id):
+        if cp.exists() and cp.stat().st_size:
+            return cp
+        raw = ps4.read_app_icon(title_id)
+        if not raw:
+            return None
+        COVER_DIR.mkdir(parents=True, exist_ok=True)
+        if HAVE_FFMPEG:
+            tmp = cp.with_suffix(".src")
+            tmp.write_bytes(raw)
+            try:
+                subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(tmp),
+                                "-vf", "scale=256:-1", "-q:v", "4", str(cp)],
+                               check=True, timeout=60,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                cp.write_bytes(raw)
+            finally:
+                tmp.unlink(missing_ok=True)
+        else:
+            cp.write_bytes(raw)
+        return cp if cp.exists() and cp.stat().st_size else None
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ps4pkg-manager/1.0"
     protocol_version = "HTTP/1.1"
@@ -246,6 +339,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_cover(q)
             if p == "/api/preflight":
                 return self._api_preflight()
+            if p == "/api/installed":
+                try:
+                    return self._json({"titles": installed_view()})
+                except Exception as e:
+                    # console desligado nao pode derrubar a aba Biblioteca
+                    return self._json({"titles": [],
+                                       "error": f"{type(e).__name__}: {e}"})
+            if p == "/api/appicon":
+                tid = (q.get("tid") or [""])[0]
+                cp = fetch_app_icon(re.sub(r"[^A-Za-z0-9]", "", tid)[:16])
+                if cp is None:
+                    return self._send(404, b"", "text/plain")
+                return self._send(200, cp.read_bytes(), "image/jpeg",
+                                  {"Cache-Control": "public, max-age=604800"})
             if p == "/api/destinations":
                 return self._json({"destinations": ps4.destinations(),
                                    "default": settings["ps4_default_destination"]})
@@ -276,6 +383,12 @@ class Handler(BaseHTTPRequestHandler):
                 items = b.get("items") or ([b["item"]] if b.get("item") else [])
                 added = [manager.add_download(i)[0]["id"] for i in items]
                 return self._json({"ok": True, "added": added})
+            if p == "/api/installed/refresh":
+                ps4.invalidate_installed_cache()
+                try:
+                    return self._json({"ok": True, "titles": installed_view()})
+                except Exception as e:
+                    return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"})
             if p == "/api/recheck":
                 a = catalog.availability(get_catalog().get("items", []), force=True)
                 return self._json({"ok": True, "ok_items": sum(1 for v in a.values() if v),
