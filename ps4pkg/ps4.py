@@ -328,13 +328,25 @@ def rpi_install(urls, timeout=40):
     return {"task_id": d.get("task_id"), "title": d.get("title") or ""}
 
 
+class RpiTaskGone(Exception):
+    """O console respondeu, mas nao conhece mais essa tarefa.
+
+    Diferente de nao conseguir falar com o instalador: aqui houve resposta.
+    Confundir os dois faz um download de horas ser dado como concluido.
+    """
+
+
 def rpi_progress(task_id, timeout=15):
-    """Progresso da tarefa, normalizado."""
+    """Progresso da tarefa, normalizado.
+
+    Levanta RpiTaskGone se o console respondeu que nao tem a tarefa, e as
+    excecoes normais de rede se nao deu para falar com ele.
+    """
     d = _rpi_post("/api/get_task_progress", {"task_id": int(task_id)}, timeout=timeout)
     if d.get("status") != "success" or "error_code" in d:
         code = d.get("error_code")
-        raise IOError(f"tarefa {task_id} sem progresso"
-                      + (f" (codigo {code:#x})" if isinstance(code, int) else ""))
+        raise RpiTaskGone(f"tarefa {task_id} nao esta mais na lista do console"
+                          + (f" (codigo {code:#x})" if isinstance(code, int) else ""))
     total = int(d.get("length_total") or 0)
     sent = int(d.get("transferred_total") or 0)
     return {
