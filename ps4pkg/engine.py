@@ -81,37 +81,72 @@ def archive_mirrors(url, timeout=25):
     return [f"https://{s}{d}/{rest}" for s in (meta.get("workable_servers") or [])]
 
 
-def _probe(url, timeout=30):
-    """Range de 1 byte: devolve (url_final, tamanho) ou levanta excecao."""
-    with _request(url, {"Range": "bytes=0-0"}, timeout=timeout) as r:
+PROBE_SECONDS = 2.5
+PROBE_BYTES = 12 * 1024 * 1024
+
+
+def _probe(url, seconds=PROBE_SECONDS, timeout=25):
+    """Mede o espelho de verdade: devolve (url_final, tamanho, bytes/s).
+
+    Nao basta perguntar "responde?" -- os espelhos do mesmo arquivo diferem
+    muito em velocidade conforme a geografia, e o redirect padrao do
+    archive.org nao leva ao mais rapido para quem esta longe dele.
+    """
+    t0 = time.time()
+    got = 0
+    with _request(url, {"Range": f"bytes=0-{PROBE_BYTES}"}, timeout=timeout) as r:
         if r.status != 206:
             raise IOError(f"servidor nao aceita Range (HTTP {r.status})")
         cr = r.headers.get("Content-Range") or ""
         tail = cr.rsplit("/", 1)[-1] if "/" in cr else ""
-        return r.geturl(), int(tail) if tail.isdigit() else 0
+        size = int(tail) if tail.isdigit() else 0
+        final = r.geturl()
+        while time.time() - t0 < seconds:
+            b = r.read(65536)
+            if not b:
+                break
+            got += len(b)
+    return final, size, got / max(0.001, time.time() - t0)
 
 
-def resolve(url, timeout=45):
-    """Acha um espelho que sirva o arquivo. Devolve (url_final, tamanho, True).
+def resolve(url, timeout=45, probe_seconds=PROBE_SECONDS):
+    """Escolhe o espelho mais rapido. Devolve (url_final, tamanho, True).
 
-    Tenta a URL do catalogo e, se falhar, os nos ia* do item. Parte do acervo
-    ja foi bloqueada no archive.org -- nesse caso todos os espelhos dao 401/403.
+    Mede a URL do catalogo e os nos ia* do item em paralelo e fica com o
+    melhor. Num download de dezenas de GB, escolher o no errado custa dias.
+    Parte do acervo ja foi bloqueada -- nesse caso todos dao 401/403.
     """
-    tried, errors = [], []
-    for cand in [ascii_url(url)] + [ascii_url(m) for m in archive_mirrors(url, timeout)]:
-        if cand in tried:
-            continue
-        tried.append(cand)
+    import concurrent.futures as cf
+
+    cands, seen = [], set()
+    for c in [ascii_url(url)] + [ascii_url(m) for m in archive_mirrors(url, timeout)]:
+        if c not in seen:
+            seen.add(c)
+            cands.append(c)
+
+    results, errors = [], []
+
+    def one(cand):
         host = urllib.parse.urlsplit(cand).netloc
         try:
-            final, size = _probe(cand, timeout)
-            if size:
-                return final, size, True
-            errors.append(f"{host}: sem tamanho")
+            final, size, speed = _probe(cand, probe_seconds)
+            if not size:
+                return None, f"{host}: sem tamanho"
+            return (speed, final, size, host), None
         except urllib.error.HTTPError as e:
-            errors.append(f"{host}: HTTP {e.code}")
+            return None, f"{host}: HTTP {e.code}"
         except Exception as e:
-            errors.append(f"{host}: {type(e).__name__}")
+            return None, f"{host}: {type(e).__name__}"
+
+    with cf.ThreadPoolExecutor(max(1, len(cands))) as ex:
+        for ok, err in ex.map(one, cands):
+            (results if ok else errors).append(ok or err)
+
+    if results:
+        results.sort(reverse=True)          # mais rapido primeiro
+        speed, final, size, host = results[0]
+        return final, size, True
+
     if any("401" in e or "403" in e for e in errors):
         raise IOError("pacote indisponivel no archive.org (item bloqueado). "
                       + "; ".join(errors))
