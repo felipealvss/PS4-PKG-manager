@@ -237,8 +237,9 @@
       <div class="body">
         <p>A checagem acima testa cada um destes pontos de verdade — não é lista de desejos.</p>
         <ul>
-          <li><b>PS4 com GoldHEN e o servidor FTP ligado</b> (porta 2121). É por ele que
-              o programa lê o catálogo do FPKGi e transfere os pacotes.</li>
+          <li><b>PS4 com GoldHEN e o servidor FTP ligado</b> (porta 2121) — mas
+              <b>só para ler o catálogo e para transferir</b>. Durante o download o
+              console pode ficar desligado; veja a seção própria abaixo.</li>
           <li><b>PS4 e PC na mesma rede local.</b> A transferência anda a ~43 Mbps aqui;
               a internet, a ~3.</li>
           <li><b>Disco de destino montado.</b> Se o disco externo não estiver montado,
@@ -274,6 +275,9 @@
         <p>O FPKGi no console usa <b>uma conexão só, num servidor só</b>: ~1,4 Mbps.
            Além da velocidade, a fila aqui roda sozinha, retoma depois de queda e não
            prende o console.</p>
+        <p>Uma consequência disso: <b>a etapa mais lenta passou a ser a transferência</b>.
+           43,8 GB pela LAN a 5,4 MB/s levam ~2h15, contra ~23 min de download. Mas é
+           tempo de rede local, com o console livre durante todo o resto.</p>
       </div>
     </details>
 
@@ -290,6 +294,90 @@
           <li><b>Biblioteca</b> — escolha o destino no console e clique em
               <b>Transferir</b>.</li>
         </ol>
+      </div>
+    </details>
+
+    <details class="acc" data-acc="estrat">
+      <summary>Estratégia de download <span class="tease">por que ficou 64× mais rápido</span></summary>
+      <div class="body">
+        <p><b>O limite de banda do archive.org é de cada servidor, não do seu IP.</b>
+           Essa única frase vale mais que qualquer outro ajuste aqui. Um espelho
+           congestionado entrega algumas centenas de KB/s e passa a impressão de que
+           existe um teto intransponível — não existe.</p>
+        <p>Medido no mesmo arquivo (Horizon Zero Dawn, 43,8 GB), 60 s por configuração:</p>
+        <table><tbody>
+          <tr><td class="k">16 conexões, 1 espelho</td><td><code>385 KB/s</code></td>
+              <td class="muted">o que o programa fazia antes</td></tr>
+          <tr><td class="k">8 + 8, dois espelhos</td><td><code>362 KB/s</code></td>
+              <td class="muted">espalhar as mesmas conexões não adianta</td></tr>
+          <tr><td class="k">16 + 16, dois espelhos</td><td><code>475 KB/s</code></td>
+              <td class="muted">somar servidores, sim</td></tr>
+          <tr><td class="k">16 × 3 espelhos, sustentado</td><td><code>24,3 MB/s</code></td>
+              <td class="muted">204 Mbps — 31 horas viraram 23 minutos</td></tr>
+        </tbody></table>
+        <p>Por isso, antes de começar, o programa baixa ~2,5 s de cada espelho do item
+           em paralelo, descarta os que discordam do tamanho do arquivo e usa
+           <b>todos</b> os que sobram, do mais rápido ao mais lento. Cada conexão que
+           falha passa para o espelho seguinte sozinha.</p>
+        <p>É também por isso que <b>Conexões por espelho</b> tem esse nome: com 3
+           espelhos e o valor em 16, são 48 conexões no total.</p>
+        <p><b>Não confie numa única medição do archive.org.</b> O mesmo servidor, no
+           mesmo arquivo, deu 0,4 MB/s numa hora e 27 MB/s vinte minutos depois. Se um
+           download parecer lento, o motivo provável é congestionamento momentâneo da
+           origem — cancelar e reenfileirar refaz a medição dos espelhos e não perde
+           nada do que já veio.</p>
+      </div>
+    </details>
+
+    <details class="acc" data-acc="offline">
+      <summary>Console desligado durante o download <span class="tease">pode, e não muda nada</span></summary>
+      <div class="body">
+        <p>O motor de download <b>não toca o PS4 em momento algum</b>. Verificado com o
+           download em curso, apontando o programa para um endereço morto da rede
+           (equivalente ao console desligado):</p>
+        <table><tbody>
+          <tr><td class="k">Console ligado</td><td><code>392 KB/s</code></td></tr>
+          <tr><td class="k">Console "desligado"</td><td><code>386 KB/s</code></td>
+              <td class="muted">diferença dentro do ruído</td></tr>
+          <tr><td class="k">Conexões para o PS4</td><td><code>nenhuma</code></td>
+              <td class="muted">todas as 48 iam para o archive.org</td></tr>
+        </tbody></table>
+        <p>O console só é necessário em três momentos, todos fora do download:</p>
+        <ul>
+          <li><b>Ler o catálogo</b> — o <code>config.json</code> do FPKGi vem por FTP.
+              Uma vez lido, fica em cache por 12 h.</li>
+          <li><b>O indicador de status</b> no cabeçalho — que simplesmente mostra
+              <i>offline</i>, sem atrapalhar nada.</li>
+          <li><b>Transferir</b> — aí sim ele precisa estar ligado.</li>
+        </ul>
+        <p>E se o catálogo vencer com o console desligado, <b>ele não se perde</b>: uma
+           atualização sem fonte acessível mantém a lista anterior e registra o aviso,
+           em vez de zerar o catálogo.</p>
+        <p><b>Fluxo recomendado para jogos grandes:</b> ligue o console uma vez para o
+           catálogo carregar → desligue → deixe o PC baixando → ligue de novo → confira
+           na seção <b>Estado do ambiente</b> que ele voltou → <b>Transferir</b>.</p>
+      </div>
+    </details>
+
+    <details class="acc" data-acc="retoma">
+      <summary>Retomada <span class="tease">queda não recomeça do zero</span></summary>
+      <div class="body">
+        <p><b>No download.</b> O arquivo é fatiado em pedaços de 4 MB gravados direto no
+           offset certo. O estado guarda os pedaços concluídos <b>e quanto já foi lido de
+           cada pedaço em andamento</b> — sem essa segunda parte, cair no meio jogaria
+           fora até 4 MB por conexão.</p>
+        <p>Testado com três <code>kill -9</code> no meio de um download: retomou do ponto
+           exato nas três vezes e o arquivo final saiu íntegro. Todo <code>.pkg</code>
+           ainda passa pela conferência da assinatura <code>\x7fCNT</code> antes de sair
+           da pasta <code>.incomplete</code>.</p>
+        <p>Pode fechar o programa, reiniciar a máquina, perder a internet. Ao
+           reenfileirar, ele continua de onde estava — e ainda remede os espelhos, o que
+           pode até acelerar o restante.</p>
+        <p><b>Na transferência.</b> O FTP do GoldHEN 2.2 anuncia <code>REST STREAM</code>,
+           então uma transferência interrompida continua do offset em que parou. Testado:
+           53 MB cancelados em 66 % e retomados — o arquivo no console ficou byte a byte
+           idêntico ao local (sha256 conferido). Num pacote de 40 GB, é a diferença entre
+           alguns minutos e recomeçar tudo.</p>
       </div>
     </details>
 
@@ -697,6 +785,12 @@ const ERRORS = [
   ['Capas em branco na grade',
    'O cache ainda está sendo aquecido — cada capa original tem ~440 KB e vem do mesmo servidor lento.',
    'Normal no primeiro acesso a cada página. Depois de cacheadas ficam instantâneas.'],
+  ['Download muito mais lento do que o normal',
+   'Congestionamento momentâneo dos espelhos do archive.org. O mesmo servidor varia de 0,4 MB/s a 27 MB/s ao longo do dia.',
+   'Cancele e reenfileire: isso refaz a medição dos espelhos e não perde nada do que já foi baixado.'],
+  ['Catálogo aparece com aviso de "catálogo anterior mantido"',
+   'Uma atualização de catálogo aconteceu sem nenhuma fonte acessível — quase sempre o console desligado.',
+   'Nada a fazer: a lista anterior foi preservada de propósito. Ligue o console e use <b>Atualizar catálogo</b> quando quiser.'],
   ['FPKGi não mostra nada depois de "Apontar para cá"',
    'O servidor deste PC não está rodando, ou a biblioteca local está vazia.',
    'Deixe o <code>ps4pkg serve</code> aberto. O catálogo local só lista o que você <b>já baixou</b>.'],
