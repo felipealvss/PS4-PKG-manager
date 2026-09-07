@@ -48,38 +48,60 @@ def _clean_name(text, content_id):
     return ""
 
 
+_FILESIZE_RE = re.compile(rb'"fileSize":\s*(\d+)')
+_DIGEST_RE = re.compile(r'"packageDigest":"([0-9A-Fa-f]+)"')
+
+
+def _clean_name(text):
+    """Nome legivel do titulo dentro do d0.pdb (ex.: 'Marvels Spider-Man').
+
+    E uma string curta, com espaco ou letra minuscula, que nao e URL, caminho,
+    content_id nem JSON. Pega a mais parecida com nome.
+    """
+    for m in re.finditer(r"[ -~]{3,48}", text):
+        s = m.group().strip().rstrip("ji|").strip()
+        if (2 < len(s) <= 46 and (" " in s or not s.isupper())
+                and not any(b in s for b in ("http", "/", "{", "\\", ".pkg",
+                                             ".png", "cover", "duskaryon"))
+                and not re.match(r"^[A-Z]{2}\d{4}-", s)
+                and not re.fullmatch(r"[0-9A-Fa-f]{16,}", s)
+                and any(c.isalpha() for c in s)):
+            return s
+    return ""
+
+
 def parse_task(blob: bytes):
     """Peças de download de uma tarefa bgft. None se nao houver jogo Duskaryon.
 
-    Uma tarefa pode empacotar varias peças (base + update + dlc), cada uma com
-    sua URL, tamanho e destino. Devolve todas, agrupaveis pelo CUSA.
+    Associacao por posicao (robusta a JSON truncado): cada URL de jogo recebe o
+    tipo do caminho de destino mais proximo (app.pkg=base, patch.pkg=update,
+    ac.pkg=dlc) e o tamanho do "fileSize" mais proximo. Nao depende do manifesto
+    JSON estar inteiro -- alguns vem cortados no d0.pdb.
     """
     text = blob.decode("latin1", "replace")
 
     dests = [(m.start(), _DEST_KIND[m.group(1)]) for m in _DEST_RE.finditer(text)]
-    pieces = []
-    for m in _MANIFEST_RE.finditer(text):
-        try:
-            j = json.loads(m.group(0))
-        except Exception:
-            continue
-        for pc in j.get("pieces", []):
-            url = pc.get("url", "")
-            if DL_HOST not in url:
-                continue
-            kind = min(dests, key=lambda d: abs(d[0] - m.start()))[1] if dests else ""
-            pieces.append({
-                "url": url,
-                "size": int(pc.get("fileSize") or 0),
-                "digest": j.get("packageDigest", ""),
-                "kind": kind,
-                "kind_label": KIND_LABEL.get(kind, kind or "?"),
-            })
+    sizes = [(m.start(), int(m.group(1))) for m in _FILESIZE_RE.finditer(blob)]
+    digests = [(m.start(), m.group(1)) for m in _DIGEST_RE.finditer(text)]
 
-    if not pieces:                       # fallback: nenhum manifest, tenta URL solta
-        for u in dict.fromkeys(_URL_RE.findall(text)):
-            pieces.append({"url": u, "size": 0, "digest": "", "kind": "",
-                           "kind_label": "?"})
+    def nearest(pos, items, default=None):
+        return min(items, key=lambda it: abs(it[0] - pos))[1] if items else default
+
+    pieces, seen = [], set()
+    for m in _URL_RE.finditer(text):
+        url = m.group()
+        if url in seen:
+            continue
+        seen.add(url)
+        pos = m.start()
+        kind = nearest(pos, dests, "")
+        pieces.append({
+            "url": url,
+            "size": nearest(pos, sizes, 0) or 0,
+            "digest": nearest(pos, digests, "") or "",
+            "kind": kind,
+            "kind_label": KIND_LABEL.get(kind, kind or "?"),
+        })
     if not pieces:
         return None
 
@@ -90,7 +112,7 @@ def parse_task(blob: bytes):
     return {
         "content_id": content_id,
         "cusa": cusa,
-        "name": _clean_name(text, content_id),
+        "name": _clean_name(text),
         "pieces": pieces,
     }
 
@@ -136,6 +158,19 @@ def probe_size(url, timeout=20):
             return int(tail) if tail.isdigit() else 0
     except Exception:
         return 0
+
+
+def probe_kind(url, timeout=20):
+    """Tipo pelo cabecalho do PKG (256 bytes, UA de PS4). '' se nao autorizado."""
+    from . import pkgmeta
+    req = urllib.request.Request(url, method="GET",
+                                 headers={"User-Agent": PS4_UA, "Range": "bytes=0-255"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            meta = pkgmeta._parse(r.read(256).ljust(0x100, b"\0"))
+        return (meta or {}).get("kind", "")
+    except Exception:
+        return ""
 
 
 # ---------- armazenamento de capturas + coletor ----------
@@ -269,13 +304,17 @@ class Sniffer:
             return
         for pc in info["pieces"]:
             size = pc.get("size") or probe_size(pc["url"])
+            kind, kind_label = pc["kind"], pc["kind_label"]
+            if not kind:                       # ultimo recurso: le o cabecalho do PKG
+                kind = probe_kind(pc["url"])
+                kind_label = KIND_LABEL.get(kind, "?")
             self.captures.add({
                 "url": pc["url"],
                 "cusa": info["cusa"],
                 "content_id": info["content_id"],
                 "name": info.get("name", ""),
-                "kind": pc["kind"],
-                "kind_label": pc["kind_label"],
+                "kind": kind,
+                "kind_label": kind_label,
                 "size": size,
                 "digest": pc.get("digest", ""),
                 "task_id": task_id,
