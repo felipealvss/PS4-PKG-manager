@@ -55,6 +55,18 @@
         padding:2px 6px;border-radius:4px;font-size:10px}
   .have.gone{background:var(--err)}
   .card.off{opacity:.5}
+  .switch{display:inline-flex;align-items:center;gap:9px;cursor:pointer;user-select:none}
+  .switch input{width:0;height:0;opacity:0;position:absolute}
+  .switch .track{width:38px;height:22px;border-radius:11px;background:var(--rule-2);
+     position:relative;transition:background .15s;flex:0 0 38px}
+  .switch .track::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;
+     border-radius:50%;background:#fff;transition:transform .15s}
+  .switch input:checked + .track{background:var(--ok)}
+  .switch input:checked + .track::after{transform:translateX(16px)}
+  .dot.act{background:var(--ok)} .dot.idle{background:var(--ink-3)}
+  .st.captured{background:var(--sunk);color:var(--ink-2)}
+  .st.queued,.st.downloading{background:#12325e;color:#7ab8ff}
+  .st.done{background:#12341c;color:#6fdc8c}
   table{width:100%;border-collapse:collapse;margin-top:12px}
   th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);font-size:13px}
   th{color:var(--dim);font-weight:500;font-size:12px}
@@ -170,6 +182,7 @@
     <button data-tab="cat" class="sel">Catálogo</button>
     <button data-tab="queue">Fila<span class="badge" id="qbadge" hidden>0</span></button>
     <button data-tab="lib">Biblioteca</button>
+    <button data-tab="dk">Duskaryon<span class="badge" id="dkbadge" hidden>0</span></button>
     <button data-tab="ps4">PS4</button>
     <button data-tab="cfg">Ajustes</button>
     <button data-tab="guia">Guia</button>
@@ -235,6 +248,21 @@
     </div>
     <div id="installed"></div>
     <div class="pager" id="instpager"></div>
+  </section>
+
+  <!-- DUSKARYON -->
+  <section id="tab-dk" hidden>
+    <div class="row">
+      <label class="switch"><input type="checkbox" id="dktoggle">
+        <span class="track"></span></label>
+      <b>Interceptar downloads do Duskaryon</b>
+      <span class="muted" id="dkstatus"></span>
+      <input type="search" id="dkq" placeholder="buscar…" autocomplete="off" style="max-width:200px">
+      <button class="act" id="dkclear">Limpar</button>
+    </div>
+    <p class="muted" id="dknote" style="margin:10px 0 0;font-size:13px;max-width:80ch"></p>
+    <div id="dk"></div>
+    <div class="pager" id="dkpager"></div>
   </section>
 
   <!-- PS4 -->
@@ -488,6 +516,32 @@
       </div>
     </details>
 
+    <details class="acc" data-acc="duskaryon">
+      <summary>Interceptação do Duskaryon <span class="tease">baixar do Duskaryon no PC</span></summary>
+      <div class="body">
+        <p>O Duskaryon entrega jogos com dublagem/legenda em português, mas baixa devagar
+           no console. Esta aba move esse download para o PC — <b>rápido e com o PS4
+           ligado só uns segundos</b>.</p>
+        <h3>Como usar</h3>
+        <ol>
+          <li>Na aba <b>Duskaryon</b>, ligue <b>Interceptar downloads</b>.</li>
+          <li>No console, abra o app Duskaryon e inicie o download do jogo que quiser —
+              uso normal, com o seu login.</li>
+          <li>O download aparece aqui na hora, agrupado por jogo com BASE / atualização /
+              DLC. <b>Nada baixa sozinho.</b></li>
+          <li>Clique <b>Baixar no PC</b> no que valer a pena (um update de 200 MB você
+              deixa pro PS4), e <b>cancele no PS4</b> o que trouxe pro PC.</li>
+          <li>Depois, instale no console pela aba Biblioteca, como qualquer outro pacote.</li>
+        </ol>
+        <h3>Por que funciona, e o cuidado</h3>
+        <p>A URL do jogo fica na fila de download do console (<code>/user/bgft/task</code>)
+           — o programa a lê por FTP, sem tocar na API do Duskaryon. A classificação sai
+           daí, local. Baixar exige o User-Agent de PS4, e a autorização está atrelada à
+           sessão ativa do console: por isso <b>mantenha o PS4 ligado durante o download
+           no PC</b>. Uma conexão só, para não sobrecarregar o serviço deles.</p>
+      </div>
+    </details>
+
     <details class="acc" data-acc="cfg">
       <summary>Configuração <span class="tease" id="teasecfg"></span></summary>
       <div class="body">
@@ -568,10 +622,11 @@ let state = {page:1, tab:'cat', settings:{}};
 /* ---------- navegação ---------- */
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('sel', x === b));
-  ['cat','queue','lib','ps4','cfg','guia'].forEach(t => $('#tab-'+t).hidden = t !== b.dataset.tab);
+  ['cat','queue','lib','dk','ps4','cfg','guia'].forEach(t => $('#tab-'+t).hidden = t !== b.dataset.tab);
   state.tab = b.dataset.tab;
   if (state.tab === 'queue') drawQueue();
   if (state.tab === 'lib') { loadLib(); loadInstalled(); }
+  if (state.tab === 'dk') loadDuskaryon();
   if (state.tab === 'cfg') renderCfg();
   if (state.tab === 'guia') loadGuia();
 });
@@ -743,7 +798,7 @@ $('#clearq').onclick = async () => { await api('/api/queue/clear', {}); poll(); 
 /* ---------- ordenação de colunas, compartilhada pelas três tabelas ---------- */
 // chave vazia = ordem natural (a que o servidor entregou, ou a ordem da fila).
 // Cada clique alterna crescente -> decrescente -> natural.
-const SORT = {lib:{key:'',dir:1}, inst:{key:'',dir:1}, queue:{key:'',dir:1}};
+const SORT = {lib:{key:'',dir:1}, inst:{key:'',dir:1}, queue:{key:'',dir:1}, dk:{key:'',dir:1}};
 try { Object.assign(SORT, JSON.parse(localStorage.getItem('ps4pkg.sort') || '{}')); }
 catch (e) {}
 const saveSort = () => {
@@ -978,6 +1033,91 @@ $('#instreload').onclick = async e => {
   e.target.disabled = true; e.target.textContent = 'Lendo…';
   await loadInstalled(true);
   e.target.disabled = false; e.target.textContent = 'Reler do console';
+};
+
+/* ---------- Duskaryon: interceptação ---------- */
+const dkState = {captures: [], page: 1, on: false, q: ''};
+
+async function loadDuskaryon() {
+  let d;
+  try { d = await api('/api/duskaryon'); } catch (e) { return; }
+  dkState.captures = d.captures || [];
+  dkState.on = !!(d.sniff && d.sniff.on);
+  const pend = dkState.captures.filter(c => c.status === 'captured').length;
+  $('#dkbadge').hidden = !pend; $('#dkbadge').textContent = pend;
+  $('#dktoggle').checked = dkState.on;
+  const st = d.sniff || {};
+  $('#dkstatus').innerHTML = dkState.on
+    ? `<span class="dot ${st.active ? 'act' : 'idle'}"></span>` +
+      (st.error ? 'erro: ' + st.error : st.active ? 'vigiando o console' : 'conectando…')
+    : '<span class="dot idle"></span>desligado';
+  $('#dknote').innerHTML = dkState.on
+    ? 'Ligado. Inicie o download no app Duskaryon do console — o que aparecer entra aqui, '
+      + 'agrupado por jogo, e <b>nada baixa sem você mandar</b>. Cancele no PS4 o que optar por trazer pro PC.'
+    : 'Ligue, vá ao console e inicie no app Duskaryon o download que quiser. A URL é capturada aqui '
+      + 'e o PC baixa rápido — o PS4 só liga uns segundos. Mantenha o console ligado durante o download do PC.';
+  if (state.tab === 'dk') renderDuskaryon();
+}
+
+function renderDuskaryon() {
+  const q = dkState.q;
+  const rows = sortRows(
+    dkState.captures.filter(c => matches(`${c.name} ${c.cusa} ${c.kind_label}`, q)),
+    'dk', { name: c => c.name, kind: c => c.kind, size: c => c.size, status: c => c.status });
+  if (!rows.length) {
+    $('#dk').innerHTML = `<div class="empty">${dkState.on
+      ? 'Nada capturado ainda. Inicie um download no app Duskaryon do console.'
+      : 'Ligue a interceptação para começar a capturar.'}</div>`;
+    $('#dkpager').innerHTML = ''; return;
+  }
+  const pages = Math.max(1, Math.ceil(rows.length / PER_LIB));
+  if (dkState.page > pages) dkState.page = pages;
+  const slice = rows.slice((dkState.page - 1) * PER_LIB, dkState.page * PER_LIB);
+  const kcls = k => k === 'update' ? 'upd' : k === 'dlc' ? 'dlc' : '';
+  const stlabel = {captured: 'capturado', queued: 'na fila', downloading: 'baixando', done: 'baixado'};
+
+  $('#dk').innerHTML = `<table><thead><tr>
+      ${th('dk','name','Jogo')}
+      ${th('dk','kind','Tipo','style="width:110px"')}
+      ${th('dk','size','Tamanho','style="width:110px"')}
+      ${th('dk','status','Estado','style="width:110px"')}
+      <th style="text-align:right"></th>
+    </tr></thead><tbody>${slice.map(c => `<tr>
+      <td><div class="nm">${c.name}</div><div class="tid">${c.cusa}${
+        c.have_local ? ' · ✓ já no PC' : ''}</div></td>
+      <td><span class="kind ${kcls(c.kind)}">${c.kind_label}</span></td>
+      <td>${c.size ? human(c.size) : '—'}</td>
+      <td><span class="st ${c.status}">${stlabel[c.status] || c.status}</span></td>
+      <td style="text-align:right;white-space:nowrap">${
+        c.status === 'captured'
+          ? `<button class="act primary" data-dl="${encodeURIComponent(c.url)}">Baixar no PC</button>
+             <button class="act" data-ig="${encodeURIComponent(c.url)}">Ignorar</button>`
+          : ''}</td></tr>`).join('')}</tbody></table>`;
+  wireSort($('#dk'), 'dk', renderDuskaryon);
+  pager($('#dkpager'), rows.length, dkState.page, pg => { dkState.page = pg; renderDuskaryon(); });
+
+  $('#dk').querySelectorAll('[data-dl]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await api('/api/duskaryon/download', {url: decodeURIComponent(b.dataset.dl)});
+          toast('Na fila — baixando no PC'); loadDuskaryon(); poll(); }
+    catch (e) { toast(e.message, true); b.disabled = false; }
+  });
+  $('#dk').querySelectorAll('[data-ig]').forEach(b => b.onclick = async () => {
+    try { await api('/api/duskaryon/dismiss', {url: decodeURIComponent(b.dataset.ig)}); loadDuskaryon(); }
+    catch (e) { toast(e.message, true); }
+  });
+}
+
+$('#dktoggle').onchange = async e => {
+  try { await api('/api/duskaryon/toggle', {on: e.target.checked}); loadDuskaryon(); }
+  catch (err) { toast(err.message, true); e.target.checked = !e.target.checked; }
+};
+let dkTimer;
+$('#dkq').oninput = () => { clearTimeout(dkTimer); dkTimer = setTimeout(() => {
+  dkState.q = $('#dkq').value.trim(); dkState.page = 1; renderDuskaryon(); }, 200); };
+$('#dkclear').onclick = async () => {
+  if (!confirm('Limpar as capturas pendentes?')) return;
+  try { await api('/api/duskaryon/clear', {}); loadDuskaryon(); } catch (e) { toast(e.message, true); }
 };
 
 /* ---------- PS4 ---------- */
@@ -1272,6 +1412,8 @@ loadStatus(); loadCat(); poll(); loadBackups();
 setInterval(poll, 1500);
 setInterval(loadStatus, 15000);
 setInterval(() => { if (state.tab === 'lib') loadLib(); }, 10000);
+setInterval(() => { if (state.tab === 'dk') loadDuskaryon(); }, 4000);
+loadDuskaryon();
 </script>
 </body>
 </html>

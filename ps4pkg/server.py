@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import catalog, pkgmeta, ps4
+from . import catalog, duskaryon, pkgmeta, ps4
 from .config import COVER_DIR, ConfigError, ensure_dirs, lan_ip, settings
 from .engine import UA
 from .jobs import manager
@@ -323,6 +323,71 @@ def fetch_app_icon(title_id):
         return cp if cp.exists() and cp.stat().st_size else None
 
 
+_DK_SAFE = re.compile(r"[^A-Za-z0-9 ._-]+")
+
+
+def dk_view():
+    """Capturas do Duskaryon, agrupadas por CUSA e enriquecidas com o catalogo."""
+    by_tid = {}
+    for it in get_catalog().get("items", []):
+        by_tid.setdefault(it["title_id"], it)
+    have = {f["title_id"] for f in library() if f.get("title_id")}
+    order = {"base": 0, "update": 1, "dlc": 2}
+    rows = []
+    for c in duskaryon.captures.all():
+        cusa = c.get("cusa", "")
+        meta = by_tid.get(cusa)
+        rows.append({
+            "url": c["url"],
+            "cusa": cusa,
+            "name": (meta or {}).get("name") or c.get("name") or cusa or "?",
+            "kind": c.get("kind", ""),
+            "kind_label": c.get("kind_label", "?"),
+            "size": c.get("size", 0),
+            "status": c.get("status", "captured"),
+            "in_catalog": meta is not None,
+            "have_local": cusa in have,
+            "captured_at": c.get("captured_at", 0),
+        })
+    rows.sort(key=lambda r: (r["name"].lower(), order.get(r["kind"], 9)))
+    return rows
+
+
+def dk_filename(cap, catalog_name):
+    base = catalog_name or cap.get("name") or cap.get("cusa") or "duskaryon"
+    safe = _DK_SAFE.sub("", base).strip() or (cap.get("cusa") or "duskaryon")
+    cusa = cap.get("cusa", "")
+    kind = cap.get("kind", "")
+    if kind == "update":
+        return f"{safe} [{cusa}] [UPDATE].pkg"
+    if kind == "dlc":
+        h = hashlib.sha1(cap["url"].encode()).hexdigest()[:8]
+        return f"{safe} [{cusa}] [DLC {h}].pkg"
+    return f"{safe} [{cusa}].pkg"
+
+
+def enqueue_duskaryon(url):
+    """Enfileira o download de uma captura: UA de PS4, 1 conexao (bom cidadao)."""
+    cap = duskaryon.captures.get(url)
+    if not cap:
+        raise KeyError("captura nao encontrada")
+    by_tid = {i["title_id"]: i for i in get_catalog().get("items", [])}
+    meta = by_tid.get(cap.get("cusa", ""))
+    item = {
+        "url": url,
+        "name": (meta or {}).get("name") or cap.get("name") or cap.get("cusa"),
+        "filename": dk_filename(cap, (meta or {}).get("name")),
+        "size": cap.get("size", 0),
+        "title_id": cap.get("cusa", ""),
+        "kind": cap.get("kind", "games"),
+        "cover_url": (meta or {}).get("cover_url", ""),
+        "source": "duskaryon",
+    }
+    job, new = manager.add_download(item, user_agent=duskaryon.PS4_UA, connections=1)
+    duskaryon.captures.set_status(url, "queued")
+    return job, new
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ps4pkg-manager/1.0"
     protocol_version = "HTTP/1.1"
@@ -382,6 +447,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_cover(q)
             if p == "/api/preflight":
                 return self._api_preflight()
+            if p == "/api/duskaryon":
+                st = duskaryon.sniffer.status()
+                return self._json({"sniff": st, "captures": dk_view()})
             if p == "/api/rpi":
                 ok, detail = ps4.rpi_available(max_age=20)
                 return self._json({"available": ok, "detail": detail,
@@ -460,6 +528,25 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     ok = manager.move(jid, -1 if act == "up" else 1)
                 return self._json({"ok": ok})
+            if p == "/api/duskaryon/toggle":
+                settings.update(duskaryon_sniff=bool(b.get("on")))
+                return self._json({"ok": True, "on": bool(settings.get("duskaryon_sniff"))})
+            if p == "/api/duskaryon/download":
+                urls = b.get("urls") or ([b["url"]] if b.get("url") else [])
+                added = []
+                for u in urls:
+                    try:
+                        job, _ = enqueue_duskaryon(u); added.append(job["id"])
+                    except Exception as e:
+                        return self._json({"error": f"{type(e).__name__}: {e}"}, 400)
+                return self._json({"ok": True, "added": added})
+            if p == "/api/duskaryon/dismiss":
+                duskaryon.captures.set_status(b["url"], "ignored")
+                duskaryon.captures.remove(b["url"])
+                return self._json({"ok": True})
+            if p == "/api/duskaryon/clear":
+                duskaryon.captures.clear(keep_active=True)
+                return self._json({"ok": True})
             if p == "/api/library/install":
                 job, new = manager.add_install(b["filename"])
                 return self._json({"ok": True, "id": job["id"], "new": new})

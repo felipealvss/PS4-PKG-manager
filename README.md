@@ -61,6 +61,23 @@ baixa os mesmos catálogos e trabalha em cima deles. Não precisa extrair o
    manda o `.pkg` pra pasta que você escolher no console. Veja abaixo.
 3. **USB** — pendrive em exFAT e o Package Installer do GoldHEN.
 
+## Interceptação do Duskaryon
+
+O Duskaryon (serviço com jogos dublados/legendados em PT-BR) baixa devagar no
+console. A aba **Duskaryon** move esse download para o PC:
+
+1. Ligue **Interceptar downloads** na aba.
+2. No console, inicie o download no app Duskaryon — uso normal, seu login.
+3. O download aparece na aba, agrupado por CUSA com BASE / atualização / DLC.
+   **Nada baixa sozinho.**
+4. Clique **Baixar no PC** no que valer a pena; cancele no PS4 o que trouxe pro PC.
+
+A URL sai da fila de download do console (`/user/bgft/task/<id>/d0.pdb`), lida por
+FTP — a classificação é toda local, sem tocar na API do Duskaryon. Baixar usa o
+User-Agent de PS4, e a autorização vale enquanto o console tem sessão ativa: por
+isso o PS4 fica ligado durante o download no PC. Uma conexão só, para não
+sobrecarregar o serviço.
+
 ## Biblioteca unificada
 
 ## Base, atualização e DLC

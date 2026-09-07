@@ -24,8 +24,8 @@ class Cancelled(Exception):
     pass
 
 
-def _request(url, headers=None, timeout=60, method="GET"):
-    h = {"User-Agent": UA, "Accept-Encoding": "identity"}
+def _request(url, headers=None, timeout=60, method="GET", ua=None):
+    h = {"User-Agent": ua or UA, "Accept-Encoding": "identity"}
     h.update(headers or {})
     return urllib.request.urlopen(
         urllib.request.Request(url, headers=h, method=method), timeout=timeout
@@ -85,7 +85,7 @@ PROBE_SECONDS = 2.5
 PROBE_BYTES = 12 * 1024 * 1024
 
 
-def _probe(url, seconds=PROBE_SECONDS, timeout=25):
+def _probe(url, seconds=PROBE_SECONDS, timeout=25, ua=None):
     """Mede o espelho de verdade: devolve (url_final, tamanho, bytes/s).
 
     Nao basta perguntar "responde?" -- os espelhos do mesmo arquivo diferem
@@ -94,7 +94,7 @@ def _probe(url, seconds=PROBE_SECONDS, timeout=25):
     """
     t0 = time.time()
     got = 0
-    with _request(url, {"Range": f"bytes=0-{PROBE_BYTES}"}, timeout=timeout) as r:
+    with _request(url, {"Range": f"bytes=0-{PROBE_BYTES}"}, timeout=timeout, ua=ua) as r:
         if r.status != 206:
             raise IOError(f"servidor nao aceita Range (HTTP {r.status})")
         cr = r.headers.get("Content-Range") or ""
@@ -109,7 +109,7 @@ def _probe(url, seconds=PROBE_SECONDS, timeout=25):
     return final, size, got / max(0.001, time.time() - t0)
 
 
-def resolve(url, timeout=45, probe_seconds=PROBE_SECONDS):
+def resolve(url, timeout=45, probe_seconds=PROBE_SECONDS, ua=None):
     """Mede os espelhos e devolve (lista_de_urls, tamanho, True).
 
     A lista vem do mais rapido ao mais lento, e o download usa todos: o limite
@@ -130,7 +130,7 @@ def resolve(url, timeout=45, probe_seconds=PROBE_SECONDS):
     def one(cand):
         host = urllib.parse.urlsplit(cand).netloc
         try:
-            final, size, speed = _probe(cand, probe_seconds)
+            final, size, speed = _probe(cand, probe_seconds, ua=ua)
             if not size:
                 return None, f"{host}: sem tamanho"
             return (speed, final, size, host), None
@@ -164,7 +164,7 @@ class Download:
     """
 
     def __init__(self, url, dest_dir, incomplete_dir, *, filename=None,
-                 connections=16, chunk_mb=4, expected_size=0):
+                 connections=16, chunk_mb=4, expected_size=0, user_agent=None):
         self.url = url
         self.dest_dir = Path(dest_dir)
         self.incomplete_dir = Path(incomplete_dir)
@@ -174,6 +174,7 @@ class Download:
         self.size = int(expected_size or 0)
         self.final_url = url
         self.mirrors = [url]
+        self.ua = user_agent
 
         self.part = self.incomplete_dir / (self.filename + ".part")
         self.state_file = self.incomplete_dir / (self.filename + ".json")
@@ -282,7 +283,7 @@ class Download:
             return
 
         got = 0
-        with _request(url, {"Range": f"bytes={base + off}-{end}"}) as r:
+        with _request(url, {"Range": f"bytes={base + off}-{end}"}, ua=self.ua) as r:
             if r.status != 206:
                 raise IOError(f"servidor ignorou Range (HTTP {r.status})")
             while True:
@@ -344,7 +345,7 @@ class Download:
             self.downloaded = self.size
             return self.target
 
-        self.mirrors, size, ranges = resolve(self.url)
+        self.mirrors, size, ranges = resolve(self.url, ua=self.ua)
         self.final_url = self.mirrors[0]
         if size:
             self.size = size

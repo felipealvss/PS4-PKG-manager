@@ -52,6 +52,8 @@ DEFAULTS = {
     "catalog_ttl_hours": 12,
     # fontes de catalogo extras, alem das que o FPKGi ja tem configuradas
     "extra_sources": {},
+    # interceptacao de downloads do Duskaryon (liga/desliga; nada baixa sozinho)
+    "duskaryon_sniff": False,
 }
 
 

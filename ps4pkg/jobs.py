@@ -51,7 +51,7 @@ class Manager:
 
     # ---------- api publica ----------
 
-    def add_download(self, item):
+    def add_download(self, item, user_agent=None, connections=None):
         url = item["url"]
         with self._lock:
             for j in self.jobs.values():
@@ -67,6 +67,9 @@ class Manager:
                 "region": item.get("region", ""),
                 "kind": item.get("kind", "games"),
                 "cover_url": item.get("cover_url", ""),
+                "user_agent": user_agent,
+                "connections": connections,
+                "source": item.get("source", ""),
                 "status": "queued", "error": None,
                 "progress": {"downloaded": 0, "size": int(item.get("size") or 0),
                              "percent": 0.0, "speed": 0, "eta": None},
@@ -275,9 +278,10 @@ class Manager:
         dl = Download(
             job["url"], settings.dest, settings.incomplete,
             filename=job["filename"],
-            connections=int(settings["connections"]),
+            connections=int(job.get("connections") or settings["connections"]),
             chunk_mb=int(settings["chunk_mb"]),
             expected_size=job["size"],
+            user_agent=job.get("user_agent"),
         )
         self._live[job["id"]] = dl
         last = [0.0]
