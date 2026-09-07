@@ -258,6 +258,7 @@
       <b>Interceptar downloads do Duskaryon</b>
       <span class="muted" id="dkstatus"></span>
       <input type="search" id="dkq" placeholder="buscar…" autocomplete="off" style="max-width:200px">
+      <button class="act" id="dkreclass" hidden>Identificar tipos</button>
       <button class="act" id="dkclear">Limpar</button>
     </div>
     <p class="muted" id="dknote" style="margin:10px 0 0;font-size:13px;max-width:80ch"></p>
@@ -1047,6 +1048,9 @@ async function loadDuskaryon() {
   try { d = await api('/api/duskaryon'); } catch (e) { return; }
   dkState.captures = d.captures || [];
   dkState.on = !!(d.sniff && d.sniff.on);
+  const unknown = dkState.captures.filter(c => c.kind_label === '?').length;
+  $('#dkreclass').hidden = !unknown;
+  $('#dkreclass').textContent = `Identificar tipos (${unknown})`;
   const pend = dkState.captures.filter(c => c.status === 'captured').length;
   $('#dkbadge').hidden = !pend; $('#dkbadge').textContent = pend;
   $('#dktoggle').checked = dkState.on;
@@ -1119,6 +1123,13 @@ $('#dktoggle').onchange = async e => {
 let dkTimer;
 $('#dkq').oninput = () => { clearTimeout(dkTimer); dkTimer = setTimeout(() => {
   dkState.q = $('#dkq').value.trim(); dkState.page = 1; renderDuskaryon(); }, 200); };
+$('#dkreclass').onclick = async e => {
+  e.target.disabled = true; e.target.textContent = 'Identificando…';
+  try { const r = await api('/api/duskaryon/reclassify', {});
+        toast(`${r.fixed} item(ns) identificado(s)`); loadDuskaryon(); }
+  catch (err) { toast(err.message, true); }
+  e.target.disabled = false;
+};
 $('#dkclear').onclick = async () => {
   if (!confirm('Limpar as capturas pendentes?')) return;
   try { await api('/api/duskaryon/clear', {}); loadDuskaryon(); } catch (e) { toast(e.message, true); }

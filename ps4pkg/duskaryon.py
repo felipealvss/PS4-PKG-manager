@@ -160,6 +160,11 @@ def probe_size(url, timeout=20):
         return 0
 
 
+# o pkgmeta usa 'atualizacao'; o modulo Duskaryon usa 'update'
+_PKGMETA_KIND = {"base": "base", "atualizacao": "update", "dlc": "dlc",
+                 "tema": "tema", "delta": "update", "licenca": "dlc"}
+
+
 def probe_kind(url, timeout=20):
     """Tipo pelo cabecalho do PKG (256 bytes, UA de PS4). '' se nao autorizado."""
     from . import pkgmeta
@@ -168,7 +173,8 @@ def probe_kind(url, timeout=20):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             meta = pkgmeta._parse(r.read(256).ljust(0x100, b"\0"))
-        return (meta or {}).get("kind", "")
+        k = (meta or {}).get("kind", "")
+        return _PKGMETA_KIND.get(k, k)
     except Exception:
         return ""
 
@@ -243,6 +249,36 @@ class Captures:
         with self._lock:
             c = self._d.get(url)
             return dict(c) if c else None
+
+    def reclassify(self):
+        """Re-sonda tipo e tamanho das capturas que ficaram sem (manifesto
+        truncado ou probe falho na captura). Usa o cabeçalho do PKG pela URL --
+        precisa da sessão do console ativa. Best-effort."""
+        with self._lock:
+            targets = [dict(c) for c in self._d.values()
+                       if c.get("kind") in ("", "?", None) or not c.get("size")]
+        fixed = 0
+        for c in targets:
+            url = c["url"]
+            new = {}
+            if c.get("kind") in ("", "?", None):
+                k = probe_kind(url)
+                if k:
+                    new["kind"] = k
+                    new["kind_label"] = KIND_LABEL.get(k, k)
+            if not c.get("size"):
+                sz = probe_size(url)
+                if sz:
+                    new["size"] = sz
+            if new:
+                with self._lock:
+                    if url in self._d:
+                        self._d[url].update(new)
+                        fixed += 1
+        if fixed:
+            with self._lock:
+                self._save()
+        return fixed
 
 
 class Sniffer:

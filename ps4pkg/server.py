@@ -544,6 +544,9 @@ class Handler(BaseHTTPRequestHandler):
                 duskaryon.captures.set_status(b["url"], "ignored")
                 duskaryon.captures.remove(b["url"])
                 return self._json({"ok": True})
+            if p == "/api/duskaryon/reclassify":
+                n = duskaryon.captures.reclassify()
+                return self._json({"ok": True, "fixed": n, "captures": dk_view()})
             if p == "/api/duskaryon/clear":
                 duskaryon.captures.clear(keep_active=True)
                 return self._json({"ok": True})
