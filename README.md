@@ -249,6 +249,58 @@ Para ter o comando `ps4pkg` no PATH, de dentro da pasta do repositório:
     printf '#!/usr/bin/env bash\nexec python3 -u "%s/ps4pkg.py" "$@"\n' "$PWD" \
       > ~/.local/bin/ps4pkg && chmod +x ~/.local/bin/ps4pkg
 
+## Sempre ligado (serviço systemd)
+
+Para o programa subir sozinho e ficar sempre acessível na rede local, rode-o como
+serviço de usuário do systemd:
+
+    # cria o serviço (ajuste o caminho se o repositório estiver noutro lugar)
+    mkdir -p ~/.config/systemd/user
+    cat > ~/.config/systemd/user/ps4pkg.service <<'UNIT'
+    [Unit]
+    Description=PS4 PKG Manager
+
+    [Service]
+    Type=simple
+    WorkingDirectory=%h/projetos/projetos-jogos/ps4pkg-manager
+    ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do findmnt -rno TARGET /run/media/%u/DIVERSOS >/dev/null 2>&1 && exit 0; sleep 1; done; exit 0'
+    ExecStart=/usr/bin/python3 -u %h/projetos/projetos-jogos/ps4pkg-manager/ps4pkg.py serve
+    Restart=on-failure
+    RestartSec=5
+
+    [Install]
+    WantedBy=default.target
+    UNIT
+    systemctl --user daemon-reload
+    systemctl --user enable --now ps4pkg.service
+
+Ele sobe no login e reinicia sozinho se cair. Acesse de qualquer aparelho da casa
+em `http://<ip-do-pc>:8420`. Gerência:
+
+    systemctl --user status ps4pkg      # estado
+    systemctl --user restart ps4pkg     # reiniciar (após atualizar o código)
+    journalctl --user -u ps4pkg -f      # logs ao vivo
+
+Para rodar **antes do login** (PC ligado mas sem sessão aberta):
+`sudo loginctl enable-linger $USER`. Ressalva: o disco de destino precisa estar
+montado nesse momento — se for auto-montado só no login, prefira sem linger.
+
+## Acesso de fora de casa (Tailscale)
+
+O programa não tem autenticação e não deve ser exposto à internet pública. Para
+acessá-lo de fora com segurança, use uma malha privada (Tailscale, grátis):
+
+    sudo dnf install -y tailscale
+    sudo systemctl enable --now tailscaled
+    sudo tailscale up          # abre uma URL para autenticar no navegador
+
+Instale o app Tailscale no celular com a mesma conta. Aí você abre
+`http://<nome-do-pc-no-tailscale>:8420` de qualquer lugar, sem abrir portas.
+
+Nota: de fora de casa você consegue **navegar o catálogo e enfileirar downloads**
+(o PC baixa). A **instalação no PS4** continua exigindo estar na mesma rede do
+console — faça quando estiver em casa.
+
 ## Onde ficam as coisas
 
     <pasta do repositório>/                    código
