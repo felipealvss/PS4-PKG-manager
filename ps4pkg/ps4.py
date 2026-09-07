@@ -319,6 +319,28 @@ def rpi_is_installed(title_id, timeout=10):
         return False, 0
 
 
+def is_installed_ftp(title_id, timeout=10):
+    """True se /user/app/<tid>/app.json existe -- conclusao de instalacao via FTP.
+
+    Funciona durante o jogo, quando a porta 12800 do Package Installer nao
+    responde. Numa instalacao nova, /user/app/<tid> fica vazio ate o fim e o
+    app.json aparece quando o console registra o titulo.
+    """
+    tid = re.sub(r"[^A-Za-z0-9]", "", str(title_id))[:16]
+    if not tid:
+        return False
+    ftp = connect(timeout=timeout)
+    try:
+        names = []
+        ftp.retrlines(f"{'LIST'} {APP_DIR}/{tid}", names.append)
+        return any(l.split(None, 8)[-1] == "app.json"
+                   for l in names if len(l.split(None, 8)) >= 9)
+    except Exception:
+        return False
+    finally:
+        _quit(ftp)
+
+
 def rpi_install(urls, timeout=40):
     """Manda o console baixar e instalar. Devolve {task_id, title}."""
     d = _rpi_post("/api/install", {"type": "direct", "packages": list(urls)},

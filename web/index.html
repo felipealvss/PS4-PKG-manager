@@ -500,9 +500,12 @@
               mais curto e o que menos exige do disco do console: um jogo de 44 GB pede
               ~44 GB livres em vez de ~88, porque o <code>.pkg</code> nunca chega a ficar
               guardado em <code>/data/pkg</code>.
-              <br>Exige o <b>Package Installer aberto no console</b> e este programa
-              rodando até terminar. Se o app sair de foco, a porta continua aceitando
-              conexão mas para de responder — o botão se desabilita sozinho e explica.</li>
+              <br>Exige o <b>Package Installer aberto no console</b> para <i>iniciar</i>.
+              Uma vez iniciada, a instalação vira tarefa de segundo plano do console e
+              <b>continua enquanto você joga outro título</b> — o programa detecta a
+              conclusão por FTP mesmo com a porta do instalador fora do ar, e mostra
+              "instalando em segundo plano" na Fila em vez de dar erro. Mantenha o PS4
+              ligado e este programa aberto (o console puxa o arquivo daqui).</li>
           <li><b>Transferir</b> (aba Biblioteca) — manda o <code>.pkg</code> para a pasta
               escolhida e o deixa lá. Retoma de onde parou se cair, e confere o tamanho
               no console antes de dar por concluída. Use quando quiser guardar o pacote
@@ -760,8 +763,9 @@ function drawQueue() {
     return `<tr>
       <td style="width:34%">${j.name}<div class="muted" style="font-size:11px">
         ${j.type === 'install'
-            ? '⤓ o console baixa daqui e instala' +
-              (p.installing ? ` · instalando ${p.installing}%` : '')
+            ? (p.note ? '⤓ ' + p.note
+               : '⤓ o console baixa daqui e instala' +
+                 (p.installing ? ` · instalando ${p.installing}%` : ''))
           : j.type === 'transfer'
             ? '→ ' + (j.dest_name || j.remote_dir || 'PS4') +
               (p.resumed_from ? ` · retomado em ${human(p.resumed_from)}` : '')

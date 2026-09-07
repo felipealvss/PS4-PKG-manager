@@ -298,8 +298,16 @@ class Manager:
         job["status"] = "done"
 
     def _run_install(self, job):
-        """O console puxa o arquivo deste PC e instala sozinho."""
+        """O console puxa o arquivo deste PC e instala sozinho.
+
+        A instalacao continua em segundo plano mesmo quando o usuario abre um
+        jogo -- e ai a porta 12800 do Package Installer para de responder. Por
+        isso o acompanhamento nao depende so dela: a conclusao e detectada por
+        FTP (o titulo aparece em /user/app/<tid>), e perder a porta 12800 e
+        tratado como "instalando em segundo plano", nunca como erro.
+        """
         from .config import lan_ip
+        from . import pkgmeta
         from .server import pkg_alias
 
         ev = threading.Event()
@@ -309,21 +317,20 @@ class Manager:
         url = f"http://{lan_ip()}:{settings['http_port']}/pkg/{alias}"
         job["url"] = url
 
-        started = ps4.rpi_install([url])
+        tid = pkgmeta.read(settings.dest / job["filename"]).get("title_id") \
+            or job.get("title_id") or ""
+        job["title_id"] = tid
+        was_installed = bool(tid) and ps4.is_installed_ftp(tid)
+
+        started = ps4.rpi_install([url])          # o gatilho exige a 12800 respondendo
         job["task_id"] = started["task_id"]
         job["console_title"] = started["title"]
         if started["title"]:
             job["name"] = started["title"]
         self._save()
 
-        # Uma instalacao de 44 GB leva mais de uma hora, e nesse tempo o Package
-        # Installer pode sair de foco no console -- a porta continua aceitando
-        # TCP mas para de responder. Perder contato NAO e sinal de conclusao:
-        # so os bytes transferidos dizem isso.
-        MAX_SEM_CONTATO = 240          # ~12 min de falhas seguidas
         last_save = 0.0
-        fails = 0
-        last = None
+        gone_grace = 0
         while True:
             if ev.is_set():
                 try:
@@ -331,38 +338,35 @@ class Manager:
                 except Exception:
                     pass
                 raise InterruptedError("instalação cancelada")
-            time.sleep(3)
+            time.sleep(4)
 
+            # 1) concluiu? (FTP, funciona durante o jogo)
+            if tid and not was_installed and ps4.is_installed_ftp(tid):
+                break
+
+            # 2) progresso exato pela 12800, enquanto ela responder
             try:
                 pr = ps4.rpi_progress(job["task_id"])
             except ps4.RpiTaskGone:
-                # o console respondeu que nao tem mais a tarefa
-                if last and last["size"] and last["transferred"] >= last["size"]:
+                # a 12800 respondeu que nao tem a tarefa: ou concluiu, ou saiu da fila
+                if tid and ps4.is_installed_ftp(tid):
                     break
-                got = (last or {}).get("transferred", 0)
-                tot = (last or {}).get("size", 0) or job["size"]
-                raise IOError(
-                    "o console encerrou a tarefa antes de concluir "
-                    f"({got / 1e9:.1f} de {tot / 1e9:.1f} GB). "
-                    "Reinicie a instalação — ela recomeça do zero."
-                )
-            except Exception as e:
-                # nao deu para falar com o instalador: insistir, nunca concluir
-                fails += 1
-                job["error"] = (f"sem contato com o instalador há {fails * 3}s "
-                                f"({type(e).__name__}) — o console pode estar "
-                                "continuando sozinho")
-                self._save()
-                if fails >= MAX_SEM_CONTATO:
+                gone_grace += 1
+                if gone_grace >= 5:      # ~20s de carencia p/ o console registrar
                     raise IOError(
-                        "perdi contato com o instalador remoto por mais de 12 min. "
-                        "Verifique no console: o download pode ter continuado."
+                        "o console encerrou a tarefa sem registrar o título. "
+                        "Reinicie a instalação."
                     )
                 continue
+            except Exception:
+                # 12800 muda (jogo aberto). NAO e erro: segue baixando em segundo plano.
+                job["error"] = None
+                job["progress"]["note"] = "instalando em segundo plano (console em jogo)"
+                self._save()
+                continue
 
-            fails = 0
+            gone_grace = 0
             job["error"] = None
-            last = pr
             if pr["error"]:
                 raise IOError(f"o console reportou erro {pr['error']:#x} na instalação")
             job["progress"] = {
@@ -377,9 +381,9 @@ class Manager:
             if pr["done"]:
                 break
 
-        job["result"] = {"task_id": job["task_id"], "title": job["console_title"],
-                         "url": url,
-                         "transferred": (last or {}).get("transferred", 0)}
+        job["progress"]["percent"] = 100.0
+        job["progress"].pop("note", None)
+        job["result"] = {"task_id": job["task_id"], "title": job["console_title"], "url": url}
         ps4.invalidate_installed_cache()
         job["status"] = "done"
 
